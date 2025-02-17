@@ -1,9 +1,9 @@
 [build]
 builder = "nixpacks"
-buildCommand = "pnpm install --no-frozen-lockfile"
+buildCommand = "npm install"
 
 [deploy]
-startCommand = "pnpm start"
+startCommand = "npm start"
 healthcheckPath = "/"
 healthcheckTimeout = 100
 restartPolicy = "on-failure"
