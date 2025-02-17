@@ -102,6 +102,9 @@ class CommandHandler {
         case 'refresh':
           await this.handleRefreshCommands(message);
           break;
+        case 'mmrrank':
+          await this.handleMMRRank(message);
+          break;
       }
     } catch (error) {
       console.error('Command error:', error.message);
@@ -139,6 +142,7 @@ class CommandHandler {
       `\`${guildPrefix} competitors list\` - Listar todas as guilds competidoras`,
       `\`${guildPrefix} playermmr <player>\` - Verificar MMR do jogador`,
       `\`${guildPrefix} refresh\` - Recarregar comandos slash`,
+      `\`${guildPrefix} mmrrank\` - Mostrar ranking MMR por role da guild`,
       `\`${guildPrefix} help\` - Mostrar esta mensagem de ajuda`
     ].join('\n');
 
@@ -427,6 +431,9 @@ class CommandHandler {
           break;
         case 'refresh':
           await this.handleRefreshCommands(interaction);
+          break;
+        case 'mmrrank':
+          await this.handleMMRRank(interaction);
           break;
       }
     } catch (error) {
@@ -908,21 +915,24 @@ class CommandHandler {
       // Helper function to format role-specific stats
       function formatPlayerStats(player, roleIndex) {
         const baseStats = `Participações: ${player.attendance} | IP: ${player.avgIp}`;
+        const kd = player.deaths > 0 ? 
+          ((player.kills - player.deaths) / player.deaths).toFixed(2) : 
+          player.kills.toFixed(2);
         
         switch(roleIndex) {
           case 0: // Tank
-            return `${baseStats} | K/D: ${(player.deaths > 0 ? player.kills / player.deaths : player.kills).toFixed(2)} | Fame/Batalha: ${Math.round(player.killFame / player.attendance).toLocaleString()}`;
+            return `${baseStats} | K/D: ${kd} | Fame/Batalha: ${Math.round(player.killFame / player.attendance).toLocaleString()}`;
           
           case 1: // Support
           case 2: // Healer
-            return `${baseStats} | K/D: ${(player.deaths > 0 ? player.kills / player.deaths : player.kills).toFixed(2)} | Cura/Batalha: ${Math.round(player.heal / player.attendance).toLocaleString()}`;
+            return `${baseStats} | K/D: ${kd} | Cura/Batalha: ${Math.round(player.heal / player.attendance).toLocaleString()}`;
           
           case 3: // DPS Melee
           case 4: // DPS Ranged
-            return `${baseStats} | K/D: ${(player.deaths > 0 ? player.kills / player.deaths : player.kills).toFixed(2)} | Dano/Batalha: ${Math.round(player.damage / player.attendance).toLocaleString()}`;
+            return `${baseStats} | K/D: ${kd} | Dano/Batalha: ${Math.round(player.damage / player.attendance).toLocaleString()}`;
           
           case 5: // Battlemount
-            return `${baseStats} | K/D: ${(player.deaths > 0 ? player.kills / player.deaths : player.kills).toFixed(2)} | Fame/Batalha: ${Math.round(player.killFame / player.attendance).toLocaleString()}`;
+            return `${baseStats} | K/D: ${kd} | Fame/Batalha: ${Math.round(player.killFame / player.attendance).toLocaleString()}`;
         }
       }
 
@@ -930,21 +940,21 @@ class CommandHandler {
       let roleStats = '';
       switch(mainRole.index) {
         case 0: // Tank
-          roleStats = `K/D: ${(player.deaths > 0 ? player.kills / player.deaths : player.kills).toFixed(2)} | Fame/Batalha: ${Math.round(player.killFame / player.attendance).toLocaleString()}`;
+          roleStats = `K/D: ${kd} | Fame/Batalha: ${Math.round(player.killFame / player.attendance).toLocaleString()}`;
           break;
         
         case 1: // Support
         case 2: // Healer
-          roleStats = `K/D: ${(player.deaths > 0 ? player.kills / player.deaths : player.kills).toFixed(2)} | Cura/Batalha: ${Math.round(player.heal / player.attendance).toLocaleString()}`;
+          roleStats = `K/D: ${kd} | Cura/Batalha: ${Math.round(player.heal / player.attendance).toLocaleString()}`;
           break;
         
         case 3: // DPS Melee
         case 4: // DPS Ranged
-          roleStats = `K/D: ${(player.deaths > 0 ? player.kills / player.deaths : player.kills).toFixed(2)} | Fame/Batalha: ${Math.round(player.killFame / player.attendance).toLocaleString()} | Dano/Batalha: ${Math.round(player.damage / player.attendance).toLocaleString()}`;
+          roleStats = `K/D: ${kd} | Fame/Batalha: ${Math.round(player.killFame / player.attendance).toLocaleString()} | Dano/Batalha: ${Math.round(player.damage / player.attendance).toLocaleString()}`;
           break;
         
         case 5: // Battlemount
-          roleStats = `K/D: ${(player.deaths > 0 ? player.kills / player.deaths : player.kills).toFixed(2)} | Fame/Batalha: ${Math.round(player.killFame / player.attendance).toLocaleString()}`;
+          roleStats = `K/D: ${kd} | Fame/Batalha: ${Math.round(player.killFame / player.attendance).toLocaleString()}`;
           break;
       }
 
@@ -1030,6 +1040,156 @@ class CommandHandler {
         }
       } else {
         await source.channel.send(errorResponse);
+      }
+    }
+  }
+
+  async handleMMRRank(source) {
+    try {
+      // Get guild settings
+      const settings = await prisma.guildSettings.findUnique({
+        where: { guildId: source.guildId }
+      });
+
+      if (!settings.albionGuildId) {
+        const response = 'ID da guild do Albion não configurado. Use /settings setguildid primeiro.';
+        if (source.commandName) {
+          await source.reply({ content: response, ephemeral: true });
+        } else {
+          await source.reply(response);
+        }
+        return;
+      }
+
+      // Fetch guild stats
+      const guildStats = await fetchGuildStats(settings.albionGuildId);
+      if (!guildStats || !guildStats.length) {
+        const response = 'Não foi possível obter dados da guild.';
+        if (source.commandName) {
+          await source.reply({ content: response, ephemeral: true });
+        } else {
+          await source.reply(response);
+        }
+        return;
+      }
+
+      // Group players by role
+      const roleGroups = [[], [], [], [], [], []]; // One array for each role
+      guildStats.forEach(player => {
+        const mainRole = getMainRole(player.roles);
+        if (player.attendance >= 5) { // Only include players with minimum attendance
+          roleGroups[mainRole.index].push(player);
+        }
+      });
+
+      const roleNames = ['Tank', 'Support', 'Healer', 'DPS Melee', 'DPS Ranged', 'Battlemount'];
+      
+      const roleParam = source.commandName ? 
+        source.options?.getString('role') : 
+        source.content.split(' ')[2]?.toLowerCase();
+
+      console.log('Role param:', roleParam); // Debug log
+      console.log('Role groups:', roleGroups.map(g => g.length)); // Debug log
+
+      const roleMap = {
+        'tank': 0,
+        'support': 1,
+        'healer': 2,
+        'melee': 3,
+        'ranged': 4,
+        'mount': 5
+      };
+
+      // Format response for each role
+      const roleRankings = roleGroups.map((players, roleIndex) => {
+        if (players.length === 0) {
+          console.log(`No players for role ${roleIndex}`); // Debug log
+          return null;
+        }
+        if (roleParam && roleMap[roleParam] !== roleIndex) {
+          console.log(`Skipping role ${roleIndex} as it doesn't match param ${roleParam}`); // Debug log
+          return null;
+        }
+
+        const scores = calculatePlayerScores(players, roleIndex);
+        
+        let playerList;
+        if (roleParam) {
+          // Show full ranking for specified role
+          playerList = scores;
+        } else {
+          // Show only top/bottom 5 for overview
+          const top5 = scores.slice(0, 5);
+          const bottom5 = scores.slice(-5);
+          playerList = [...top5, null, ...bottom5];
+        }
+
+        const formatPlayerStats = (p) => {
+          if (!p) return '';
+          const kd = p.deaths > 0 ? 
+            ((p.kills - p.deaths) / p.deaths).toFixed(2) : 
+            p.kills.toFixed(2);
+          const famePerBattle = Math.round(p.killFame / p.attendance).toLocaleString();
+          return `${p.name.padEnd(16)} ${p.score.toString().padStart(3)}/100 | ${Math.round(p.avgIp)} IP | ${p.attendance} Battle | K/D: ${kd} | Fame/Battle: ${famePerBattle}`;
+        };
+
+        return [
+          `\n**${roleNames[roleIndex]}s** (${scores.length} players)`,
+          '```',
+          roleParam ? 'Ranking Completo:' : 'Top 5:',
+          ...playerList.map((p, i) => {
+            if (!p) return roleParam ? null : '';
+            const position = roleParam ? i + 1 : (i < 5 ? i + 1 : scores.length - 4 + (i - 5));
+            return `${position}. ${formatPlayerStats(p)}`;
+          }).filter(Boolean),
+          '```'
+        ].join('\n');
+      }).filter(Boolean);
+
+      console.log('Role rankings length:', roleRankings.length); // Debug log
+
+      // Send header message
+      const headerMessage = roleParam && roleMap.hasOwnProperty(roleParam) ? 
+        [
+          `**Ranking MMR ${settings.guildName || 'da Guild'}**`,
+          '(últimos 30 dias, mínimo 5 batalhas)',
+          `Mostrando ranking completo para: ${roleNames[roleMap[roleParam]]}`,
+          ''
+        ].join('\n')
+        :
+        [
+          `**Ranking MMR ${settings.guildName || 'da Guild'}**`,
+          '(últimos 30 dias, mínimo 5 batalhas)',
+          ''
+        ].join('\n');
+
+      if (source.commandName) {
+        await source.reply({ content: headerMessage, ephemeral: true });
+      } else {
+        await source.reply(headerMessage);
+      }
+
+      // Send each role ranking in separate messages
+      for (const roleRanking of roleRankings) {
+        if (!roleRanking) continue;
+
+        if (source.commandName) {
+          await source.followUp({ content: roleRanking, ephemeral: true });
+        } else {
+          await source.channel.send(roleRanking);
+        }
+      }
+    } catch (error) {
+      console.error('Error generating MMR ranking:', error);
+      const response = 'Erro ao gerar ranking MMR.';
+      if (source.commandName) {
+        if (!source.replied) {
+          await source.reply({ content: response, ephemeral: true });
+        } else {
+          await source.followUp({ content: response, ephemeral: true });
+        }
+      } else {
+        await source.reply(response);
       }
     }
   }

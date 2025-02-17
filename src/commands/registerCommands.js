@@ -120,6 +120,22 @@ const commands = [
     .setName('refresh')
     .setDescription('Recarregar comandos slash (apenas admin)')
     .setDefaultMemberPermissions('0'),
+  new SlashCommandBuilder()
+    .setName('mmrrank')
+    .setDescription('Mostrar ranking MMR por role da guild')
+    .addStringOption(option =>
+      option
+        .setName('role')
+        .setDescription('Role específica para ver ranking completo')
+        .addChoices(
+          { name: 'Tank', value: 'tank' },
+          { name: 'Support', value: 'support' },
+          { name: 'Healer', value: 'healer' },
+          { name: 'DPS Melee', value: 'melee' },
+          { name: 'DPS Ranged', value: 'ranged' },
+          { name: 'Battlemount', value: 'mount' }
+        )
+        .setRequired(false)),
 ];
 
 async function registerCommands(client) {
