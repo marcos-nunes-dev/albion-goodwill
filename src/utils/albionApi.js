@@ -44,11 +44,11 @@ function calculatePlayerScores(players, roleIndex) {
       case 0: // Tank
         return {
           kdRatio: { 
-            weight: 0.4,
+            weight: 0.3,
             value: player.deaths > 0 ? player.kills / player.deaths : player.kills
           },
           killFamePerBattle: { 
-            weight: 0.3,
+            weight: 0.4,
             value: player.attendance > 0 ? player.killFame / player.attendance : 0
           },
           avgIp: { 
@@ -57,15 +57,29 @@ function calculatePlayerScores(players, roleIndex) {
           }
         };
       case 1: // Support
-      case 2: // Healer
         return {
           kdRatio: { 
             weight: 0.3,
             value: player.deaths > 0 ? player.kills / player.deaths : player.kills
           },
-          healPerBattle: {
+          killFamePerBattle: {
             weight: 0.4,
+            value: player.attendance > 0 ? player.killFame / player.attendance : 0
+          },
+          avgIp: { 
+            weight: 0.3,
+            value: player.avgIp
+          }
+        };
+      case 2: // Healer
+        return {
+          healPerBattle: {
+            weight: 0.5,
             value: player.attendance > 0 ? player.heal / player.attendance : 0
+          },
+          kdRatio: { 
+            weight: 0.2,
+            value: player.deaths > 0 ? player.kills / player.deaths : player.kills
           },
           avgIp: { 
             weight: 0.3,
@@ -75,20 +89,20 @@ function calculatePlayerScores(players, roleIndex) {
       case 3: // DPS Melee
       case 4: // DPS Ranged
         return {
-          kdRatio: { 
-            weight: 0.25,
-            value: player.deaths > 0 ? player.kills / player.deaths : player.kills
-          },
-          killFamePerBattle: { 
-            weight: 0.25,
-            value: player.attendance > 0 ? player.killFame / player.attendance : 0
-          },
           damagePerBattle: {
-            weight: 0.25,
+            weight: 0.4,
             value: player.attendance > 0 ? player.damage / player.attendance : 0
           },
+          kdRatio: { 
+            weight: 0.2,
+            value: player.deaths > 0 ? player.kills / player.deaths : player.kills
+          },
+          killFamePerBattle: {
+            weight: 0.2,
+            value: player.attendance > 0 ? player.killFame / player.attendance : 0
+          },
           avgIp: { 
-            weight: 0.25,
+            weight: 0.2,
             value: player.avgIp
           }
         };
