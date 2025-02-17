@@ -25,11 +25,12 @@ const client = new Client({
   ]
 });
 
+// Initialize services in correct order
+const guildManager = new GuildManager();
 const voiceTracker = new VoiceTracker(prisma, guildManager);
 const messageTracker = new MessageTracker();
 const commandHandler = new CommandHandler();
 const activityAggregator = new ActivityAggregator();
-const guildManager = new GuildManager();
 
 // Update railway.toml settings
 let serverStarted = false;
