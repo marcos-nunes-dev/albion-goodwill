@@ -8,6 +8,7 @@ const CommandHandler = require('./handlers/CommandHandler');
 const ActivityAggregator = require('./services/ActivityAggregator');
 const GuildManager = require('./services/GuildManager');
 const { registerCommands } = require('./commands/registerCommands');
+const logger = require('./utils/logger');
 
 console.log('Starting bot...');
 console.log('Checking required environment variables...');
@@ -31,14 +32,23 @@ const guildManager = new GuildManager();
 const voiceTracker = new VoiceTracker(prisma, guildManager);
 const messageTracker = new MessageTracker();
 const commandHandler = new CommandHandler();
-const activityAggregator = new ActivityAggregator();
+const activityAggregator = new ActivityAggregator(client);
 
 // Update railway.toml settings
 let serverStarted = false;
 
+// Add environment validation
+const requiredEnvVars = ['DISCORD_TOKEN', 'DATABASE_URL'];
+const missingVars = requiredEnvVars.filter(v => !process.env[v]);
+if (missingVars.length > 0) {
+  logger.error('Missing required environment variables', { missing: missingVars });
+  process.exit(1);
+}
+
 // Start server only after bot is ready
 client.once('ready', async () => {
-  console.log(`Bot logged in as ${client.user.tag}`);
+  client.user.setActivity('Monitorando atividade', { type: 'WATCHING' });
+  logger.info(`Bot logged in`, { username: client.user.tag });
   
   try {
     // Register slash commands
@@ -68,7 +78,7 @@ client.once('ready', async () => {
       console.log('HTTP server started');
     }
   } catch (error) {
-    console.error('Initialization error:', error.message);
+    logger.error('Initialization failed', { error: error.message });
     process.exit(1);
   }
 });
@@ -243,4 +253,28 @@ async function shutdown(signal) {
 }
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT')); 
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+// Add cleanup interval
+setInterval(async () => {
+  try {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const [deletedActivities, deletedSessions] = await Promise.all([
+      prisma.dailyActivity.deleteMany({
+        where: { date: { lt: thirtyDaysAgo } }
+      }),
+      prisma.voiceSession.deleteMany({
+        where: { joinTime: { lt: thirtyDaysAgo } }
+      })
+    ]);
+
+    logger.info('Cleanup completed', { 
+      deletedActivities: deletedActivities.count,
+      deletedSessions: deletedSessions.count
+    });
+  } catch (error) {
+    logger.error('Cleanup failed', { error: error.message });
+  }
+}, 24 * 60 * 60 * 1000); 

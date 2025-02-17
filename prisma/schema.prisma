@@ -21,6 +21,8 @@ model DailyActivity {
   lastUpdated              DateTime @default(now()) @db.Timestamptz
 
   @@unique([userId, guildId, date])
+  @@index([date])
+  @@index([guildId, date])
   @@map("daily_activity")
 }
 
@@ -68,6 +70,8 @@ model VoiceSession {
   lastStatusChange    DateTime @db.Timestamptz
   isActive            Boolean  @default(true)
 
+  @@index([isActive])
+  @@index([userId, isActive])
   @@map("voice_sessions")
 }
 
