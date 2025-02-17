@@ -6,6 +6,7 @@ const prisma = require('./config/prisma');
 const { formatDuration } = require('./utils/timeUtils');
 const CommandHandler = require('./handlers/CommandHandler');
 const ActivityAggregator = require('./services/ActivityAggregator');
+const http = require('http');
 
 console.log('Starting bot...');
 console.log('Checking environment variables:');
@@ -196,4 +197,11 @@ client.login(process.env.DISCORD_TOKEN)
   .catch(error => {
     console.error('Failed to login:', error);
     process.exit(1);
-  }); 
+  });
+
+const server = http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end('Bot is running!');
+});
+
+server.listen(process.env.PORT || 3000); 
