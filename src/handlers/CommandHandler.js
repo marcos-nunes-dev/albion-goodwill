@@ -938,6 +938,10 @@ class CommandHandler {
 
       // Format role-specific stats
       let roleStats = '';
+      const kd = player.deaths > 0 ? 
+        ((player.kills - player.deaths) / player.deaths).toFixed(2) : 
+        player.kills.toFixed(2);
+
       switch(mainRole.index) {
         case 0: // Tank
           roleStats = `K/D: ${kd} | Fame/Batalha: ${Math.round(player.killFame / player.attendance).toLocaleString()}`;
@@ -989,7 +993,15 @@ class CommandHandler {
       console.error('Error calculating player MMR:', error);
       const response = 'Erro ao calcular MMR do jogador.';
       if (source.commandName) {
-        await source.reply({ content: response, ephemeral: true });
+        try {
+          if (!source.replied) {
+            await source.reply({ content: response, flags: [4096] });
+          } else {
+            await source.followUp({ content: response, flags: [4096] });
+          }
+        } catch (e) {
+          console.error('Interaction error:', e);
+        }
       } else {
         await source.reply(response);
       }
