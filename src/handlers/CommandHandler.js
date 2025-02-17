@@ -360,22 +360,22 @@ class CommandHandler {
   formatStats(period, stats) {
     const voiceTime = formatDuration(stats.voiceTimeSeconds);
     const afkTime = formatDuration(stats.afkTimeSeconds);
-    const mutedTime = formatDuration(stats.mutedTimeSeconds);
+    const mutedTime = stats.mutedTimeSeconds ? formatDuration(stats.mutedTimeSeconds) : '0m';
 
     const activePercentage = Math.round((stats.voiceTimeSeconds - stats.afkTimeSeconds) / stats.voiceTimeSeconds * 100);
     const afkPercentage = Math.round(stats.afkTimeSeconds / stats.voiceTimeSeconds * 100);
 
     return [
       `**${period} Activity Stats:**`,
-      '',
+      ' ',
       '**Voice Activity:**',
       `🎤 Active Voice: ${voiceTime}`,
       `💤 AFK: ${afkTime}`,
       `🔇 Muted: ${mutedTime}`,
-      '',
+      ' ',
       '**Chat Activity:**',
       `💬 Messages: ${stats.messageCount}`,
-      '',
+      ' ',
       '**Active Time Distribution:**',
       `🟩 Active: ${activePercentage}%`,
       `⬜ AFK: ${afkPercentage}%`
