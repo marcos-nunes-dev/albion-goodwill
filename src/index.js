@@ -32,6 +32,33 @@ const commandHandler = new CommandHandler();
 const activityAggregator = new ActivityAggregator();
 const guildManager = new GuildManager();
 
+// Move server creation after all initializations
+const server = http.createServer(async (req, res) => {
+  try {
+    // Check database connection
+    await prisma.$queryRaw`SELECT 1`;
+    
+    // Check if bot is ready
+    if (!client.isReady()) {
+      res.writeHead(503);
+      res.end('Bot is starting...');
+      return;
+    }
+
+    // All checks passed
+    res.writeHead(200);
+    res.end('OK');
+  } catch (error) {
+    console.error('Health check failed:', error.message);
+    res.writeHead(503);
+    res.end('Service Unavailable');
+  }
+});
+
+// Update railway.toml settings
+let serverStarted = false;
+
+// Start server only after bot is ready
 client.once('ready', async () => {
   console.log(`Bot logged in as ${client.user.tag}`);
   
@@ -53,8 +80,16 @@ client.once('ready', async () => {
       }
     }
     console.log(`Initialized ${client.guilds.cache.size} servers`);
+
+    // Start server after initialization
+    if (!serverStarted) {
+      server.listen(process.env.PORT || 3000);
+      serverStarted = true;
+      console.log('HTTP server started');
+    }
   } catch (error) {
     console.error('Initialization error:', error.message);
+    process.exit(1);
   }
 });
 
@@ -189,13 +224,6 @@ client.login(process.env.DISCORD_TOKEN)
     console.error('Failed to login:', error);
     process.exit(1);
   });
-
-const server = http.createServer((req, res) => {
-  res.writeHead(200);
-  res.end('Bot is running!');
-});
-
-server.listen(process.env.PORT || 3000);
 
 process.on('unhandledRejection', (error) => {
   console.error('Unhandled promise rejection:', error);
