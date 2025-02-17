@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "A Discord bot built with Discord.js",
   "main": "src/index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
@@ -12,10 +15,10 @@
     "@prisma/client": "^5.10.2",
     "@supabase/supabase-js": "^2.39.7",
     "discord.js": "^14.14.1",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "prisma": "^5.10.2"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0",
-    "prisma": "^5.10.2"
+    "nodemon": "^3.1.0"
   }
 } 
