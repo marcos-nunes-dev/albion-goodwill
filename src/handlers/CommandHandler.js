@@ -7,14 +7,16 @@ class CommandHandler {
   }
 
   async handleCommand(message) {
-    // Keep existing message command handling for backward compatibility
-    if (!message.content.startsWith('!albiongw')) return;
+    if (!message.content.startsWith(this.prefix)) return;
 
-    const args = message.content.slice('!albiongw'.length).trim().split(/ +/);
+    const args = message.content.slice(this.prefix.length).trim().split(/ +/);
     const command = args.shift()?.toLowerCase();
 
     try {
       switch (command) {
+        case 'ping':
+          await this.handlePing(message);
+          break;
         case 'daily':
           await this.getDailyStats(message, message.mentions.users.first());
           break;
@@ -27,6 +29,9 @@ class CommandHandler {
         case 'leaderboard':
           await this.getLeaderboard(message);
           break;
+        case 'help':
+          await this.showHelp(message);
+          break;
       }
     } catch (error) {
       console.error('Command error:', error.message);
@@ -34,16 +39,27 @@ class CommandHandler {
     }
   }
 
+  async handlePing(message) {
+    const sent = await message.reply('Pong!');
+    const latency = sent.createdTimestamp - message.createdTimestamp;
+    const apiLatency = Math.round(message.client.ws.ping);
+    
+    await sent.edit([
+      '🏓 Pong!',
+      `Latência: ${latency}ms`,
+      `API Latência: ${apiLatency}ms`
+    ].join('\n'));
+  }
+
   async showHelp(message) {
     const commands = [
       '**Albion Goodwill Bot Commands:**',
-      `\`${this.prefix}ping\` - Test if bot is working`,
-      `\`${this.prefix}stats [@user]\` - Show daily activity (yours or mentioned user's)`,
-      `\`${this.prefix}weekstats [@user]\` - Show weekly activity (yours or mentioned user's)`,
-      `\`${this.prefix}monthstats [@user]\` - Show monthly activity (yours or mentioned user's)`,
-      `\`${this.prefix}leaderboard\` - Show top 10 active users today`,
-      `\`${this.prefix}rolecheck @role [day]\` - Check activity of role members against top performers (defaults to weekly if day not specified)`,
-      `\`${this.prefix}help\` - Show this help message`
+      `\`${this.prefix} ping\` - Verificar se o bot está funcionando`,
+      `\`${this.prefix} daily [@user]\` - Mostrar atividade diária (sua ou do usuário mencionado)`,
+      `\`${this.prefix} weekly [@user]\` - Mostrar atividade semanal`,
+      `\`${this.prefix} monthly [@user]\` - Mostrar atividade mensal`,
+      `\`${this.prefix} leaderboard\` - Mostrar top 10 usuários ativos hoje`,
+      `\`${this.prefix} help\` - Mostrar esta mensagem de ajuda`
     ].join('\n');
 
     await message.reply(commands);
@@ -320,6 +336,17 @@ class CommandHandler {
 
     try {
       switch (interaction.commandName) {
+        case 'ping':
+          const sent = await interaction.reply({ content: 'Pong!', fetchReply: true });
+          const latency = sent.createdTimestamp - interaction.createdTimestamp;
+          const apiLatency = Math.round(interaction.client.ws.ping);
+          
+          await interaction.editReply([
+            '🏓 Pong!',
+            `Latência: ${latency}ms`,
+            `API Latência: ${apiLatency}ms`
+          ].join('\n'));
+          break;
         case 'stats':
           await this.handleStatsCommand(interaction);
           break;

@@ -30,7 +30,10 @@ const commands = [
             .setRequired(false))),
   new SlashCommandBuilder()
     .setName('leaderboard')
-    .setDescription('Show server activity leaderboard')
+    .setDescription('Show server activity leaderboard'),
+  new SlashCommandBuilder()
+    .setName('ping')
+    .setDescription('Verificar latência do bot'),
 ];
 
 async function registerCommands(client) {
