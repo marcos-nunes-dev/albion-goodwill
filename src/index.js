@@ -7,6 +7,7 @@ const { formatDuration } = require('./utils/timeUtils');
 const CommandHandler = require('./handlers/CommandHandler');
 const ActivityAggregator = require('./services/ActivityAggregator');
 const GuildManager = require('./services/GuildManager');
+const { registerCommands } = require('./commands/registerCommands');
 
 console.log('Starting bot...');
 console.log('Checking required environment variables...');
@@ -40,6 +41,9 @@ client.once('ready', async () => {
   console.log(`Bot logged in as ${client.user.tag}`);
   
   try {
+    // Register slash commands
+    await registerCommands(client);
+
     // Initialize settings for all current guilds
     for (const guild of client.guilds.cache.values()) {
       await guildManager.initializeGuild(guild);
@@ -191,6 +195,14 @@ client.on('guildCreate', async (guild) => {
     }
   } catch (error) {
     console.error(`Error initializing guild ${guild.name}:`, error);
+  }
+});
+
+client.on('interactionCreate', async (interaction) => {
+  try {
+    await commandHandler.handleInteraction(interaction);
+  } catch (error) {
+    console.error('Interaction error:', error.message);
   }
 });
 

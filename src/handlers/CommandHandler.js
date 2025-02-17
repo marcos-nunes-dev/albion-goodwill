@@ -7,48 +7,31 @@ class CommandHandler {
   }
 
   async handleCommand(message) {
-    console.log('Received message:', message.content);
-    const args = message.content.split(' ');
-    const command = args[0];
-    const mentionedUser = message.mentions.members.first();
+    // Keep existing message command handling for backward compatibility
+    if (!message.content.startsWith('!albiongw')) return;
 
-    // Simple command handling without binding
-    if (command === `${this.prefix}ping`) {
-      console.log('Ping command detected');
-      return message.reply('Pong!');
+    const args = message.content.slice('!albiongw'.length).trim().split(/ +/);
+    const command = args.shift()?.toLowerCase();
+
+    try {
+      switch (command) {
+        case 'daily':
+          await this.getDailyStats(message, message.mentions.users.first());
+          break;
+        case 'weekly':
+          await this.getWeeklyStats(message, message.mentions.users.first());
+          break;
+        case 'monthly':
+          await this.getMonthlyStats(message, message.mentions.users.first());
+          break;
+        case 'leaderboard':
+          await this.getLeaderboard(message);
+          break;
+      }
+    } catch (error) {
+      console.error('Command error:', error.message);
+      await message.reply('There was an error executing this command!');
     }
-
-    if (command === `${this.prefix}help`) {
-      console.log('Help command detected');
-      return this.showHelp(message);
-    }
-
-    if (command === `${this.prefix}stats`) {
-      console.log('Stats command detected');
-      return this.getDailyStats(message, mentionedUser);
-    }
-
-    if (command === `${this.prefix}weekstats`) {
-      console.log('Weekly stats command detected');
-      return this.getWeeklyStats(message, mentionedUser);
-    }
-
-    if (command === `${this.prefix}monthstats`) {
-      console.log('Monthly stats command detected');
-      return this.getMonthlyStats(message, mentionedUser);
-    }
-
-    if (command === `${this.prefix}leaderboard`) {
-      console.log('Leaderboard command detected');
-      return this.getLeaderboard(message);
-    }
-
-    if (command === `${this.prefix}rolecheck`) {
-      console.log('Role check command detected');
-      return this.handleRoleActivityCheck(message);
-    }
-
-    // ... other commands can be added here
   }
 
   async showHelp(message) {
@@ -325,11 +308,147 @@ class CommandHandler {
   formatStats(period, stats) {
     return [
       `**${period} Activity:**`,
-      `Messages Sent: ${stats.messageCount}`,
-      `Voice Time: ${formatDuration(stats.voiceTimeSeconds)}`,
-      `AFK Time: ${formatDuration(stats.afkTimeSeconds)}`,
-      `Muted/Deafened Time: ${formatDuration(stats.mutedDeafenedTimeSeconds)}`
-    ].join('\n');
+      `🎤 Voice Time: ${formatDuration(stats.voiceTimeSeconds)}`,
+      `💬 Messages: ${stats.messageCount}`,
+      stats.afkTimeSeconds > 0 ? `💤 AFK Time: ${formatDuration(stats.afkTimeSeconds)}` : null,
+      stats.mutedDeafenedTimeSeconds > 0 ? `🔇 Muted Time: ${formatDuration(stats.mutedDeafenedTimeSeconds)}` : null
+    ].filter(Boolean).join('\n');
+  }
+
+  async handleInteraction(interaction) {
+    if (!interaction.isChatInputCommand()) return;
+
+    try {
+      switch (interaction.commandName) {
+        case 'stats':
+          await this.handleStatsCommand(interaction);
+          break;
+        case 'leaderboard':
+          await this.handleLeaderboardCommand(interaction);
+          break;
+      }
+    } catch (error) {
+      console.error('Command error:', error.message);
+      await interaction.reply({ 
+        content: 'There was an error executing this command!', 
+        ephemeral: true 
+      });
+    }
+  }
+
+  async handleStatsCommand(interaction) {
+    const subcommand = interaction.options.getSubcommand();
+    const targetUser = interaction.options.getUser('user');
+
+    await interaction.deferReply();
+
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const userId = targetUser ? targetUser.id : interaction.user.id;
+      const displayName = targetUser ? targetUser.displayName : interaction.user.username;
+      let stats;
+
+      switch (subcommand) {
+        case 'daily':
+          stats = await prisma.dailyActivity.findUnique({
+            where: {
+              userId_guildId_date: {
+                userId,
+                guildId: interaction.guildId,
+                date: today
+              }
+            }
+          });
+          break;
+        case 'weekly':
+          stats = await prisma.weeklyActivity.findUnique({
+            where: {
+              userId_guildId_weekStart: {
+                userId,
+                guildId: interaction.guildId,
+                weekStart: getWeekStart(today)
+              }
+            }
+          });
+          break;
+        case 'monthly':
+          stats = await prisma.monthlyActivity.findUnique({
+            where: {
+              userId_guildId_monthStart: {
+                userId,
+                guildId: interaction.guildId,
+                monthStart: getMonthStart(today)
+              }
+            }
+          });
+          break;
+      }
+
+      if (!stats) {
+        await interaction.editReply(`No activity recorded for ${targetUser ? displayName : 'you'}.`);
+        return;
+      }
+
+      const period = `${targetUser ? `${displayName}'s` : 'Your'} ${subcommand.charAt(0).toUpperCase() + subcommand.slice(1)}`;
+      const response = this.formatStats(period, stats);
+      await interaction.editReply(response);
+    } catch (error) {
+      console.error('Stats command error:', error.message);
+      await interaction.editReply('Failed to fetch stats.');
+    }
+  }
+
+  async handleLeaderboardCommand(interaction) {
+    await interaction.deferReply();
+
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const topUsers = await prisma.dailyActivity.findMany({
+        where: {
+          date: today,
+          guildId: interaction.guildId
+        },
+        orderBy: [
+          { voiceTimeSeconds: 'desc' },
+          { messageCount: 'desc' }
+        ],
+        take: 10
+      });
+
+      if (topUsers.length === 0) {
+        await interaction.editReply('No activity recorded today.');
+        return;
+      }
+
+      const members = await interaction.guild.members.fetch();
+      const leaderboardLines = topUsers.map((user, index) => {
+        const member = members.get(user.userId);
+        const displayName = member ? member.displayName : user.username;
+        
+        return [
+          `${index + 1}. **${displayName}**`,
+          `   🎤 Voice: ${formatDuration(user.voiceTimeSeconds)}`,
+          `   💬 Messages: ${user.messageCount}`,
+          user.afkTimeSeconds > 0 ? `   💤 AFK: ${formatDuration(user.afkTimeSeconds)}` : '',
+          ''
+        ].filter(Boolean).join('\n');
+      });
+
+      const response = [
+        '**🏆 Today\'s Most Active Members:**',
+        '',
+        ...leaderboardLines
+      ].join('\n');
+
+      await interaction.editReply(response);
+    } catch (error) {
+      console.error('Leaderboard error:', error.message);
+      await interaction.editReply('Failed to fetch leaderboard.');
+    }
   }
 }
 
