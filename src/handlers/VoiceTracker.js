@@ -15,87 +15,47 @@ class VoiceTracker {
       const userId = oldState.member?.user?.id || newState.member?.user?.id;
       const username = oldState.member?.user?.username || newState.member?.user?.username;
 
-      if (!userId || !username) {
-        console.error('Missing user information:', { oldState, newState });
-        return;
-      }
+      if (!userId || !username) return;
 
-      console.log('Voice state update:', {
-        user: username,
-        oldChannel: oldState.channelId,
-        newChannel: newState.channelId,
-        isMuted: newState.selfMute,
-        isDeafened: newState.selfDeaf
-      });
-
-      // Handle user leaving voice
       if (oldState.channelId && !newState.channelId) {
         await this.handleVoiceLeave(userId);
       }
-      // Handle user joining voice
       else if (!oldState.channelId && newState.channelId) {
         await this.handleVoiceJoin(userId, username, newState);
       }
-      // Handle status change (mute/deafen/channel change)
       else if (oldState.channelId && newState.channelId) {
         await this.handleVoiceStatusChange(userId, newState);
       }
     } catch (error) {
-      console.error('Error handling voice state update:', error);
+      console.error('Voice state error:', error.message);
     }
   }
 
   async handleVoiceJoin(userId, username, state) {
     try {
-      // First, find and close any existing active sessions
+      // Close existing sessions
       const existingSessions = await prisma.voiceSession.findMany({
-        where: {
-          userId,
-          isActive: true
-        }
+        where: { userId, isActive: true }
       });
 
-      // Close all existing sessions
       if (existingSessions.length > 0) {
-        console.log(`Closing ${existingSessions.length} existing sessions for ${username}`);
-        
         for (const session of existingSessions) {
           const duration = Math.floor((new Date() - session.joinTime) / 1000);
           if (duration >= this.MINIMUM_TIME_TO_COUNT) {
             await this.updateActivityStats(
-              userId, 
-              username, 
-              session.guildId,
-              duration, 
-              session.isAfk, 
-              session.isMutedOrDeafened
+              userId, username, session.guildId, duration,
+              session.isAfk, session.isMutedOrDeafened
             );
           }
         }
-
         await prisma.voiceSession.updateMany({
-          where: {
-            userId,
-            isActive: true
-          },
-          data: {
-            isActive: false,
-            lastStatusChange: new Date()
-          }
+          where: { userId, isActive: true },
+          data: { isActive: false, lastStatusChange: new Date() }
         });
       }
 
-      const isAFK = await this.isAFKChannel(state.channel);
-      const isMutedOrDeafened = state.selfMute || state.selfDeaf;
-
-      console.log('User joining voice:', {
-        username,
-        channel: state.channel?.name,
-        isAFK,
-        isMutedOrDeafened
-      });
-
       // Create new session
+      const isAFK = await this.isAFKChannel(state.channel);
       await prisma.voiceSession.create({
         data: {
           userId,
@@ -103,13 +63,13 @@ class VoiceTracker {
           guildId: state.guild.id,
           channelId: state.channelId,
           isAfk: isAFK,
-          isMutedOrDeafened,
+          isMutedOrDeafened: state.selfMute || state.selfDeaf,
           joinTime: new Date(),
           lastStatusChange: new Date()
         }
       });
     } catch (error) {
-      console.error('Error handling voice join:', error);
+      console.error('Voice join error:', error.message);
     }
   }
 

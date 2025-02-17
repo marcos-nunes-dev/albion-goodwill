@@ -10,7 +10,7 @@ const http = require('http');
 const GuildManager = require('./services/GuildManager');
 
 console.log('Starting bot...');
-console.log('Checking environment variables:');
+console.log('Checking required environment variables...');
 console.log('- DISCORD_TOKEN:', process.env.DISCORD_TOKEN ? 'Found' : 'Missing');
 console.log('- DATABASE_URL:', process.env.DATABASE_URL ? 'Found' : 'Missing');
 
@@ -26,15 +26,14 @@ const client = new Client({
   ]
 });
 
-const voiceTracker = new VoiceTracker(prisma);
+const voiceTracker = new VoiceTracker(prisma, guildManager);
 const messageTracker = new MessageTracker();
 const commandHandler = new CommandHandler();
 const activityAggregator = new ActivityAggregator();
 const guildManager = new GuildManager();
 
 client.once('ready', async () => {
-  console.log(`Logged in as ${client.user.tag}`);
-  console.log('Bot is ready!');
+  console.log(`Bot logged in as ${client.user.tag}`);
   
   try {
     // Initialize settings for all current guilds
@@ -53,12 +52,10 @@ client.once('ready', async () => {
         }
       }
     }
+    console.log(`Initialized ${client.guilds.cache.size} servers`);
   } catch (error) {
-    console.error('Error during initialization:', error);
+    console.error('Initialization error:', error.message);
   }
-
-  console.log('Servers:', client.guilds.cache.map(g => g.name));
-  console.log('Command prefix:', commandHandler.prefix);
 });
 
 client.on('error', (error) => {
@@ -68,25 +65,10 @@ client.on('error', (error) => {
 client.on('messageCreate', async (message) => {
   try {
     if (message.author.bot) return;
-    
-    console.log('New message:', {
-      content: message.content,
-      author: message.author.username,
-      channel: message.channel.name,
-      guild: message.guild?.name,
-      permissions: message.guild?.members.me?.permissions.toArray(),
-      canSendMessages: message.channel.permissionsFor(client.user)?.has('SendMessages'),
-      canViewChannel: message.channel.permissionsFor(client.user)?.has('ViewChannel'),
-    });
-
-    // Track message
     await messageTracker.handleMessage(message);
-
-    // Handle commands
     await commandHandler.handleCommand(message);
   } catch (error) {
-    console.error('Error processing message:', error);
-    console.error(error.stack);
+    console.error('Message handling error:', error.message);
   }
 });
 
@@ -98,42 +80,22 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
   }
 });
 
-// Replace the existing aggregation interval with this:
+// Update periodic checks to log only important events
 setInterval(async () => {
   const now = new Date();
-  
   try {
-    // Run weekly aggregation on Sunday at midnight
     if (now.getDay() === 0 && now.getHours() === 0 && now.getMinutes() === 0) {
-      console.log('Running weekly aggregation...');
+      console.log('Running weekly aggregation');
       await activityAggregator.aggregateWeeklyStats();
     }
-
-    // Run monthly aggregation on the 1st of each month at midnight
     if (now.getDate() === 1 && now.getHours() === 0 && now.getMinutes() === 0) {
-      console.log('Running monthly aggregation...');
+      console.log('Running monthly aggregation');
       await activityAggregator.aggregateMonthlyStats();
     }
-
-    // Run daily aggregation at midnight
-    if (now.getHours() === 0 && now.getMinutes() === 0) {
-      console.log('Running daily cleanup...');
-      // Optionally clean up old daily data
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      
-      await prisma.dailyActivity.deleteMany({
-        where: {
-          date: {
-            lt: thirtyDaysAgo
-          }
-        }
-      });
-    }
   } catch (error) {
-    console.error('Error during scheduled aggregation:', error);
+    console.error('Aggregation error:', error.message);
   }
-}, 60000); // Check every minute
+}, 60000);
 
 // Add periodic check (every 5 minutes)
 setInterval(async () => {
