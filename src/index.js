@@ -6,7 +6,6 @@ const prisma = require('./config/prisma');
 const { formatDuration } = require('./utils/timeUtils');
 const CommandHandler = require('./handlers/CommandHandler');
 const ActivityAggregator = require('./services/ActivityAggregator');
-const http = require('http');
 const GuildManager = require('./services/GuildManager');
 
 console.log('Starting bot...');
@@ -31,29 +30,6 @@ const messageTracker = new MessageTracker();
 const commandHandler = new CommandHandler();
 const activityAggregator = new ActivityAggregator();
 const guildManager = new GuildManager();
-
-// Move server creation after all initializations
-const server = http.createServer(async (req, res) => {
-  try {
-    // Check database connection
-    await prisma.$queryRaw`SELECT 1`;
-    
-    // Check if bot is ready
-    if (!client.isReady()) {
-      res.writeHead(503);
-      res.end('Bot is starting...');
-      return;
-    }
-
-    // All checks passed
-    res.writeHead(200);
-    res.end('OK');
-  } catch (error) {
-    console.error('Health check failed:', error.message);
-    res.writeHead(503);
-    res.end('Service Unavailable');
-  }
-});
 
 // Update railway.toml settings
 let serverStarted = false;
@@ -83,7 +59,6 @@ client.once('ready', async () => {
 
     // Start server after initialization
     if (!serverStarted) {
-      server.listen(process.env.PORT || 3000);
       serverStarted = true;
       console.log('HTTP server started');
     }
@@ -240,9 +215,6 @@ process.on('uncaughtException', (error) => {
 async function shutdown(signal) {
   console.log(`${signal} received. Shutting down gracefully...`);
   try {
-    // Close HTTP server
-    await new Promise((resolve) => server.close(resolve));
-    
     // Close Discord client
     client.destroy();
     

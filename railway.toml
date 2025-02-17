@@ -4,8 +4,5 @@ buildCommand = "npm install"
 
 [deploy]
 startCommand = "npm start"
-healthcheckPath = "/"
-healthcheckTimeout = 180
-healthcheckInterval = 15
 restartPolicy = "on-failure"
 numRetries = 10 
