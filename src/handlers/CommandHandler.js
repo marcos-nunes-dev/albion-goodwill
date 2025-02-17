@@ -76,8 +76,9 @@ class CommandHandler {
 
       const stats = await prisma.dailyActivity.findUnique({
         where: {
-          userId_date: {
+          userId_guildId_date: {
             userId: userId,
+            guildId: message.guild.id,
             date: today
           }
         }
@@ -104,8 +105,9 @@ class CommandHandler {
 
       const stats = await prisma.weeklyActivity.findUnique({
         where: {
-          userId_weekStart: {
+          userId_guildId_weekStart: {
             userId: userId,
+            guildId: message.guild.id,
             weekStart
           }
         }
@@ -132,8 +134,9 @@ class CommandHandler {
 
       const stats = await prisma.monthlyActivity.findUnique({
         where: {
-          userId_monthStart: {
+          userId_guildId_monthStart: {
             userId: userId,
+            guildId: message.guild.id,
             monthStart
           }
         }
@@ -159,7 +162,8 @@ class CommandHandler {
 
       const topUsers = await prisma.dailyActivity.findMany({
         where: {
-          date: today
+          date: today,
+          guildId: message.guild.id
         },
         orderBy: [
           { voiceTimeSeconds: 'desc' },

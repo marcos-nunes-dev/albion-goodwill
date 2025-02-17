@@ -10,6 +10,7 @@ datasource db {
 model DailyActivity {
   id                        String   @id @default(uuid())
   userId                    String
+  guildId                   String
   username                  String
   date                      DateTime @db.Date
   messageCount              Int      @default(0)
@@ -18,13 +19,14 @@ model DailyActivity {
   mutedDeafenedTimeSeconds  Int      @default(0)
   lastUpdated              DateTime @default(now()) @db.Timestamptz
 
-  @@unique([userId, date])
+  @@unique([userId, guildId, date])
   @@map("daily_activity")
 }
 
 model WeeklyActivity {
   id                        String   @id @default(uuid())
   userId                    String
+  guildId                   String
   username                  String
   weekStart                 DateTime @db.Date
   messageCount              Int      @default(0)
@@ -33,13 +35,14 @@ model WeeklyActivity {
   mutedDeafenedTimeSeconds  Int      @default(0)
   lastUpdated              DateTime @default(now()) @db.Timestamptz
 
-  @@unique([userId, weekStart], map: "weekly_activity_user_week")
+  @@unique([userId, guildId, weekStart], map: "weekly_activity_user_guild_week")
   @@map("weekly_activity")
 }
 
 model MonthlyActivity {
   id                        String   @id @default(uuid())
   userId                    String
+  guildId                   String
   username                  String
   monthStart                DateTime @db.Date
   messageCount              Int      @default(0)
@@ -48,13 +51,14 @@ model MonthlyActivity {
   mutedDeafenedTimeSeconds  Int      @default(0)
   lastUpdated              DateTime @default(now()) @db.Timestamptz
 
-  @@unique([userId, monthStart], map: "monthly_activity_user_month")
+  @@unique([userId, guildId, monthStart], map: "monthly_activity_user_guild_month")
   @@map("monthly_activity")
 }
 
 model VoiceSession {
   id                  String   @id @default(uuid())
   userId              String
+  guildId             String
   username            String
   channelId           String
   isAfk               Boolean  @default(false)
@@ -64,4 +68,16 @@ model VoiceSession {
   isActive            Boolean  @default(true)
 
   @@map("voice_sessions")
+}
+
+model GuildSettings {
+  id                String   @id @default(uuid())
+  guildId           String   @unique
+  guildName         String
+  afkChannelId      String?
+  commandPrefix     String   @default("!albiongw")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("guild_settings")
 } 

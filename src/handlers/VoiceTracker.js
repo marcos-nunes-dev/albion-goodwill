@@ -1,9 +1,11 @@
 const { formatDuration } = require('../utils/timeUtils');
 const prisma = require('../config/prisma');
+const GuildManager = require('../services/GuildManager');
 
 class VoiceTracker {
-  constructor(supabase) {
-    this.supabase = supabase;
+  constructor(prisma, guildManager) {
+    this.prisma = prisma;
+    this.guildManager = guildManager;
     this.MINIMUM_TIME_TO_COUNT = 5 * 60; // 5 minutes in seconds
     this.AFK_TIMEOUT = 15 * 60; // 15 minutes in seconds
   }
@@ -63,6 +65,7 @@ class VoiceTracker {
             await this.updateActivityStats(
               userId, 
               username, 
+              session.guildId,
               duration, 
               session.isAfk, 
               session.isMutedOrDeafened
@@ -82,7 +85,7 @@ class VoiceTracker {
         });
       }
 
-      const isAFK = this.isAFKChannel(state.channel);
+      const isAFK = await this.isAFKChannel(state.channel);
       const isMutedOrDeafened = state.selfMute || state.selfDeaf;
 
       console.log('User joining voice:', {
@@ -97,6 +100,7 @@ class VoiceTracker {
         data: {
           userId,
           username,
+          guildId: state.guild.id,
           channelId: state.channelId,
           isAfk: isAFK,
           isMutedOrDeafened,
@@ -126,7 +130,14 @@ class VoiceTracker {
       // Only count if user stayed longer than minimum time
       if (duration >= this.MINIMUM_TIME_TO_COUNT) {
         // First update activity stats
-        await this.updateActivityStats(userId, session.username, duration, session.isAfk, session.isMutedOrDeafened);
+        await this.updateActivityStats(
+          userId, 
+          session.username, 
+          session.guildId,
+          duration, 
+          session.isAfk, 
+          session.isMutedOrDeafened
+        );
       }
 
       // Then close the session
@@ -147,22 +158,23 @@ class VoiceTracker {
     }
   }
 
-  async updateActivityStats(userId, username, duration, isAfk, isMutedOrDeafened) {
+  async updateActivityStats(userId, username, guildId, duration, isAfk, isMutedOrDeafened) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Don't count time if user was AFK for too long
     const isLongAFK = isAfk && duration >= this.AFK_TIMEOUT;
 
     await prisma.dailyActivity.upsert({
       where: {
-        userId_date: {
+        userId_guildId_date: {
           userId,
+          guildId,
           date: today
         }
       },
       create: {
         userId,
+        guildId,
         username,
         date: today,
         voiceTimeSeconds: (isMutedOrDeafened || isLongAFK) ? 0 : duration,
@@ -177,43 +189,68 @@ class VoiceTracker {
     });
   }
 
-  isAFKChannel(channel) {
-    // Implement your AFK channel detection logic here
-    // For example, check if channel.name includes 'afk' or specific channel ID
-    return channel.name.toLowerCase().includes('afk');
+  async isAFKChannel(channel) {
+    if (!channel) return false;
+    
+    try {
+      const guildSettings = await this.guildManager.getGuildSettings(channel.guild.id);
+      
+      // Check if channel is the configured AFK channel
+      if (guildSettings?.afkChannelId === channel.id) {
+        return true;
+      }
+      
+      // Fallback to name check
+      return channel.name.toLowerCase().includes('afk');
+    } catch (error) {
+      console.error('Error checking AFK channel:', error);
+      return false;
+    }
   }
 
   async handleVoiceStatusChange(userId, newState) {
-    const session = await prisma.voiceSession.findFirst({
-      where: {
-        userId,
-        isActive: true
+    try {
+      const session = await prisma.voiceSession.findFirst({
+        where: {
+          userId,
+          guildId: newState.guild.id,  // Add guildId to query
+          isActive: true
+        }
+      });
+
+      if (!session) return;
+
+      // Add check for user leaving voice channel
+      if (!newState.channelId) {
+        await this.handleVoiceLeave(userId);
+        return;
       }
-    });
 
-    if (!session) return;
+      const now = new Date();
+      const duration = Math.floor((now - session.lastStatusChange) / 1000);
 
-    const now = new Date();
-    const duration = Math.floor((now - session.lastStatusChange) / 1000);
+      // Update activity stats with the previous state
+      await this.updateActivityStats(
+        userId, 
+        session.username,
+        session.guildId,
+        duration, 
+        session.isAfk, 
+        session.isMutedOrDeafened
+      );
 
-    // Update activity stats with the previous state
-    await this.updateActivityStats(
-      userId, 
-      session.username, 
-      duration, 
-      session.isAfk, 
-      session.isMutedOrDeafened
-    );
-
-    // Update session with new state
-    await prisma.voiceSession.update({
-      where: { id: session.id },
-      data: {
-        isAfk: this.isAFKChannel(newState.channel),
-        isMutedOrDeafened: newState.selfMute || newState.selfDeaf,
-        lastStatusChange: now
-      }
-    });
+      // Update session with new state
+      await prisma.voiceSession.update({
+        where: { id: session.id },
+        data: {
+          isAfk: await this.isAFKChannel(newState.channel),
+          isMutedOrDeafened: newState.selfMute || newState.selfDeaf,
+          lastStatusChange: now
+        }
+      });
+    } catch (error) {
+      console.error('Error in handleVoiceStatusChange:', error);
+    }
   }
 
   formatStats(period, stats) {

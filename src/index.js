@@ -7,6 +7,7 @@ const { formatDuration } = require('./utils/timeUtils');
 const CommandHandler = require('./handlers/CommandHandler');
 const ActivityAggregator = require('./services/ActivityAggregator');
 const http = require('http');
+const GuildManager = require('./services/GuildManager');
 
 console.log('Starting bot...');
 console.log('Checking environment variables:');
@@ -29,29 +30,31 @@ const voiceTracker = new VoiceTracker(prisma);
 const messageTracker = new MessageTracker();
 const commandHandler = new CommandHandler();
 const activityAggregator = new ActivityAggregator();
+const guildManager = new GuildManager();
 
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
   console.log('Bot is ready!');
   
-  // Track all users already in voice channels when bot starts
   try {
+    // Initialize settings for all current guilds
     for (const guild of client.guilds.cache.values()) {
-      const voiceStates = guild.voiceStates.cache;
+      await guildManager.initializeGuild(guild);
       
+      // Track voice users
+      const voiceStates = guild.voiceStates.cache;
       for (const voiceState of voiceStates.values()) {
-        if (voiceState.channelId) {  // If user is in a voice channel
+        if (voiceState.channelId) {
           await voiceTracker.handleVoiceJoin(
             voiceState.member.user.id,
             voiceState.member.user.username,
             voiceState
           );
-          console.log(`Tracked existing voice user: ${voiceState.member.user.username}`);
         }
       }
     }
   } catch (error) {
-    console.error('Error tracking existing voice users:', error);
+    console.error('Error during initialization:', error);
   }
 
   console.log('Servers:', client.guilds.cache.map(g => g.name));
@@ -87,8 +90,12 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-client.on('voiceStateUpdate', (oldState, newState) => {
-  voiceTracker.handleVoiceStateUpdate(oldState, newState);
+client.on('voiceStateUpdate', async (oldState, newState) => {
+  try {
+    await voiceTracker.handleVoiceStateUpdate(oldState, newState);
+  } catch (error) {
+    console.error('Error handling voice state update:', error);
+  }
 });
 
 // Replace the existing aggregation interval with this:
@@ -192,6 +199,28 @@ client.on('warn', (info) => {
   console.warn('Warning:', info);
 });
 
+client.on('guildCreate', async (guild) => {
+  console.log(`Joined new guild: ${guild.name}`);
+  try {
+    // Initialize guild settings
+    await guildManager.initializeGuild(guild);
+    
+    // Track existing voice users
+    const voiceStates = guild.voiceStates.cache;
+    for (const voiceState of voiceStates.values()) {
+      if (voiceState.channelId) {
+        await voiceTracker.handleVoiceJoin(
+          voiceState.member.user.id,
+          voiceState.member.user.username,
+          voiceState
+        );
+      }
+    }
+  } catch (error) {
+    console.error(`Error initializing guild ${guild.name}:`, error);
+  }
+});
+
 client.login(process.env.DISCORD_TOKEN)
   .then(() => console.log('Login successful!'))
   .catch(error => {
@@ -204,4 +233,39 @@ const server = http.createServer((req, res) => {
   res.end('Bot is running!');
 });
 
-server.listen(process.env.PORT || 3000); 
+server.listen(process.env.PORT || 3000);
+
+process.on('unhandledRejection', (error) => {
+  console.error('Unhandled promise rejection:', error);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error);
+  // Gracefully close database connection
+  prisma.$disconnect()
+    .then(() => process.exit(1))
+    .catch(() => process.exit(1));
+});
+
+async function shutdown(signal) {
+  console.log(`${signal} received. Shutting down gracefully...`);
+  try {
+    // Close HTTP server
+    await new Promise((resolve) => server.close(resolve));
+    
+    // Close Discord client
+    client.destroy();
+    
+    // Close database connection
+    await prisma.$disconnect();
+    
+    console.log('Graceful shutdown completed');
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT')); 

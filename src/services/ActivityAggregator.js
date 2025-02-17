@@ -15,7 +15,7 @@ class ActivityAggregator {
     try {
       // Get all daily activities for the week
       const dailyStats = await prisma.dailyActivity.groupBy({
-        by: ['userId', 'username'],
+        by: ['userId', 'guildId', 'username'],
         where: {
           date: {
             gte: weekStart,
@@ -35,13 +35,15 @@ class ActivityAggregator {
       for (const stat of dailyStats) {
         await prisma.weeklyActivity.upsert({
           where: {
-            userId_weekStart: {
+            userId_guildId_weekStart: {
               userId: stat.userId,
+              guildId: stat.guildId,
               weekStart
             }
           },
           create: {
             userId: stat.userId,
+            guildId: stat.guildId,
             username: stat.username,
             weekStart,
             messageCount: stat._sum.messageCount || 0,
@@ -53,8 +55,7 @@ class ActivityAggregator {
             messageCount: stat._sum.messageCount || 0,
             voiceTimeSeconds: stat._sum.voiceTimeSeconds || 0,
             afkTimeSeconds: stat._sum.afkTimeSeconds || 0,
-            mutedDeafenedTimeSeconds: stat._sum.mutedDeafenedTimeSeconds || 0,
-            lastUpdated: new Date()
+            mutedDeafenedTimeSeconds: stat._sum.mutedDeafenedTimeSeconds || 0
           }
         });
       }
@@ -78,7 +79,7 @@ class ActivityAggregator {
     try {
       // Get all daily activities for the month
       const dailyStats = await prisma.dailyActivity.groupBy({
-        by: ['userId', 'username'],
+        by: ['userId', 'guildId', 'username'],
         where: {
           date: {
             gte: monthStart,
@@ -98,13 +99,15 @@ class ActivityAggregator {
       for (const stat of dailyStats) {
         await prisma.monthlyActivity.upsert({
           where: {
-            userId_monthStart: {
+            userId_guildId_monthStart: {
               userId: stat.userId,
+              guildId: stat.guildId,
               monthStart
             }
           },
           create: {
             userId: stat.userId,
+            guildId: stat.guildId,
             username: stat.username,
             monthStart,
             messageCount: stat._sum.messageCount || 0,
@@ -116,8 +119,7 @@ class ActivityAggregator {
             messageCount: stat._sum.messageCount || 0,
             voiceTimeSeconds: stat._sum.voiceTimeSeconds || 0,
             afkTimeSeconds: stat._sum.afkTimeSeconds || 0,
-            mutedDeafenedTimeSeconds: stat._sum.mutedDeafenedTimeSeconds || 0,
-            lastUpdated: new Date()
+            mutedDeafenedTimeSeconds: stat._sum.mutedDeafenedTimeSeconds || 0
           }
         });
       }
