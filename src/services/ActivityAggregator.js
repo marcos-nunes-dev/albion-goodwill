@@ -1,0 +1,132 @@
+const prisma = require('../config/prisma');
+const { getWeekStart, getMonthStart } = require('../utils/timeUtils');
+
+class ActivityAggregator {
+  async aggregateWeeklyStats() {
+    const weekStart = getWeekStart(new Date());
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+
+    console.log('Aggregating weekly stats:', {
+      weekStart: weekStart.toISOString(),
+      weekEnd: weekEnd.toISOString()
+    });
+
+    try {
+      // Get all daily activities for the week
+      const dailyStats = await prisma.dailyActivity.groupBy({
+        by: ['userId', 'username'],
+        where: {
+          date: {
+            gte: weekStart,
+            lt: weekEnd
+          }
+        },
+        _sum: {
+          messageCount: true,
+          voiceTimeSeconds: true,
+          afkTimeSeconds: true,
+          mutedDeafenedTimeSeconds: true
+        }
+      });
+
+      console.log(`Found ${dailyStats.length} users with activity this week`);
+
+      for (const stat of dailyStats) {
+        await prisma.weeklyActivity.upsert({
+          where: {
+            userId_weekStart: {
+              userId: stat.userId,
+              weekStart
+            }
+          },
+          create: {
+            userId: stat.userId,
+            username: stat.username,
+            weekStart,
+            messageCount: stat._sum.messageCount || 0,
+            voiceTimeSeconds: stat._sum.voiceTimeSeconds || 0,
+            afkTimeSeconds: stat._sum.afkTimeSeconds || 0,
+            mutedDeafenedTimeSeconds: stat._sum.mutedDeafenedTimeSeconds || 0
+          },
+          update: {
+            messageCount: stat._sum.messageCount || 0,
+            voiceTimeSeconds: stat._sum.voiceTimeSeconds || 0,
+            afkTimeSeconds: stat._sum.afkTimeSeconds || 0,
+            mutedDeafenedTimeSeconds: stat._sum.mutedDeafenedTimeSeconds || 0,
+            lastUpdated: new Date()
+          }
+        });
+      }
+
+      console.log('Weekly aggregation completed successfully');
+    } catch (error) {
+      console.error('Error during weekly aggregation:', error);
+    }
+  }
+
+  async aggregateMonthlyStats() {
+    const monthStart = getMonthStart(new Date());
+    const monthEnd = new Date(monthStart);
+    monthEnd.setMonth(monthEnd.getMonth() + 1);
+
+    console.log('Aggregating monthly stats:', {
+      monthStart: monthStart.toISOString(),
+      monthEnd: monthEnd.toISOString()
+    });
+
+    try {
+      // Get all daily activities for the month
+      const dailyStats = await prisma.dailyActivity.groupBy({
+        by: ['userId', 'username'],
+        where: {
+          date: {
+            gte: monthStart,
+            lt: monthEnd
+          }
+        },
+        _sum: {
+          messageCount: true,
+          voiceTimeSeconds: true,
+          afkTimeSeconds: true,
+          mutedDeafenedTimeSeconds: true
+        }
+      });
+
+      console.log(`Found ${dailyStats.length} users with activity this month`);
+
+      for (const stat of dailyStats) {
+        await prisma.monthlyActivity.upsert({
+          where: {
+            userId_monthStart: {
+              userId: stat.userId,
+              monthStart
+            }
+          },
+          create: {
+            userId: stat.userId,
+            username: stat.username,
+            monthStart,
+            messageCount: stat._sum.messageCount || 0,
+            voiceTimeSeconds: stat._sum.voiceTimeSeconds || 0,
+            afkTimeSeconds: stat._sum.afkTimeSeconds || 0,
+            mutedDeafenedTimeSeconds: stat._sum.mutedDeafenedTimeSeconds || 0
+          },
+          update: {
+            messageCount: stat._sum.messageCount || 0,
+            voiceTimeSeconds: stat._sum.voiceTimeSeconds || 0,
+            afkTimeSeconds: stat._sum.afkTimeSeconds || 0,
+            mutedDeafenedTimeSeconds: stat._sum.mutedDeafenedTimeSeconds || 0,
+            lastUpdated: new Date()
+          }
+        });
+      }
+
+      console.log('Monthly aggregation completed successfully');
+    } catch (error) {
+      console.error('Error during monthly aggregation:', error);
+    }
+  }
+}
+
+module.exports = ActivityAggregator; 
