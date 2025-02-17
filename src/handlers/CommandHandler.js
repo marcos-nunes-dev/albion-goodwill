@@ -362,8 +362,17 @@ class CommandHandler {
     const afkTime = formatDuration(stats.afkTimeSeconds);
     const mutedTime = stats.mutedTimeSeconds ? formatDuration(stats.mutedTimeSeconds) : '0m';
 
-    const activePercentage = Math.round((stats.voiceTimeSeconds - stats.afkTimeSeconds) / stats.voiceTimeSeconds * 100);
-    const afkPercentage = Math.round(stats.afkTimeSeconds / stats.voiceTimeSeconds * 100);
+    let activePercentage = 0;
+    let afkPercentage = 0;
+
+    if (stats.voiceTimeSeconds > 0) {
+      activePercentage = Math.round((stats.voiceTimeSeconds - stats.afkTimeSeconds) / stats.voiceTimeSeconds * 100);
+      afkPercentage = Math.round(stats.afkTimeSeconds / stats.voiceTimeSeconds * 100);
+    }
+
+    // Ensure percentages are valid numbers
+    activePercentage = isNaN(activePercentage) ? 0 : activePercentage;
+    afkPercentage = isNaN(afkPercentage) ? 0 : afkPercentage;
 
     return [
       `**${period} Activity Stats:**`,
