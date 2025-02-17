@@ -51,6 +51,75 @@ const commands = [
           { name: 'Semanal', value: 'weekly' }
         )
         .setRequired(false)),
+  new SlashCommandBuilder()
+    .setName('settings')
+    .setDescription('Configurar bot')
+    .setDefaultMemberPermissions('0')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('setguildid')
+        .setDescription('Definir ID da guild do Albion')
+        .addStringOption(option =>
+          option
+            .setName('id')
+            .setDescription('ID da guild do Albion')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('setprefix')
+        .setDescription('Definir prefixo dos comandos')
+        .addStringOption(option =>
+          option
+            .setName('prefix')
+            .setDescription('Novo prefixo para comandos (ex: !ag)')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('setguildname')
+        .setDescription('Definir nome da guild')
+        .addStringOption(option =>
+          option
+            .setName('name')
+            .setDescription('Nome da guild no Albion')
+            .setRequired(true))),
+  new SlashCommandBuilder()
+    .setName('competitors')
+    .setDescription('Gerenciar guilds competidoras')
+    .setDefaultMemberPermissions('0')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('add')
+        .setDescription('Adicionar guild competidora')
+        .addStringOption(option =>
+          option
+            .setName('id')
+            .setDescription('ID da guild competidora do Albion')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('remove')
+        .setDescription('Remover guild competidora')
+        .addStringOption(option =>
+          option
+            .setName('id')
+            .setDescription('ID da guild competidora do Albion')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('list')
+        .setDescription('Listar todas as guilds competidoras')),
+  new SlashCommandBuilder()
+    .setName('playermmr')
+    .setDescription('Verificar MMR do jogador')
+    .addStringOption(option =>
+      option
+        .setName('player')
+        .setDescription('Nome do jogador')
+        .setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('refresh')
+    .setDescription('Recarregar comandos slash (apenas admin)')
+    .setDefaultMemberPermissions('0'),
 ];
 
 async function registerCommands(client) {

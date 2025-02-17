@@ -1,15 +1,34 @@
 const prisma = require('../config/prisma');
 const { formatDuration, getWeekStart, getMonthStart } = require('../utils/timeUtils');
+const { fetchGuildStats, getMainRole, calculatePlayerScores } = require('../utils/albionApi');
+const { registerCommands } = require('../commands/registerCommands');
 
 class CommandHandler {
   constructor() {
     this.prefix = '!albiongw';
+    this.prefixCache = new Map();
+    this.MAX_COMPETITORS = 5;
+  }
+
+  async getGuildPrefix(guildId) {
+    if (this.prefixCache.has(guildId)) {
+      return this.prefixCache.get(guildId);
+    }
+
+    const settings = await prisma.guildSettings.findUnique({
+      where: { guildId }
+    });
+
+    const prefix = settings?.commandPrefix || this.prefix;
+    this.prefixCache.set(guildId, prefix);
+    return prefix;
   }
 
   async handleCommand(message) {
-    if (!message.content.startsWith(this.prefix)) return;
+    const guildPrefix = await this.getGuildPrefix(message.guild.id);
+    if (!message.content.startsWith(guildPrefix)) return;
 
-    const args = message.content.slice(this.prefix.length).trim().split(/ +/);
+    const args = message.content.slice(guildPrefix.length).trim().split(/ +/);
     const command = args.shift()?.toLowerCase();
 
     try {
@@ -41,6 +60,48 @@ class CommandHandler {
           const period = args[1]?.toLowerCase() === 'daily' ? 'daily' : 'weekly';
           await this.handleRoleActivityCheck(message, role, period);
           break;
+        case 'setguildid':
+          if (!args[0]) {
+            await message.reply('Por favor, forneça o ID da guild do Albion.');
+            return;
+          }
+          await this.handleSetGuildId(message, args[0]);
+          break;
+        case 'competitors':
+          if (!args[0]) {
+            await this.listCompetitors(message);
+            return;
+          }
+          switch(args[0].toLowerCase()) {
+            case 'add':
+              if (!args[1]) {
+                await message.reply('Por favor, forneça o ID da guild competidora.');
+                return;
+              }
+              await this.handleAddCompetitor(message, args[1]);
+              break;
+            case 'remove':
+              if (!args[1]) {
+                await message.reply('Por favor, forneça o ID da guild competidora.');
+                return;
+              }
+              await this.handleRemoveCompetitor(message, args[1]);
+              break;
+            case 'list':
+              await this.listCompetitors(message);
+              break;
+          }
+          break;
+        case 'playermmr':
+          if (!args[0]) {
+            await message.reply('Por favor, forneça o nome do jogador.');
+            return;
+          }
+          await this.handlePlayerMMR(message, args[0]);
+          break;
+        case 'refresh':
+          await this.handleRefreshCommands(message);
+          break;
       }
     } catch (error) {
       console.error('Command error:', error.message);
@@ -61,15 +122,24 @@ class CommandHandler {
   }
 
   async showHelp(message) {
+    const guildPrefix = await this.getGuildPrefix(message.guild.id);
     const commands = [
       '**Albion Goodwill Bot Commands:**',
-      `\`${this.prefix} ping\` - Verificar se o bot está funcionando`,
-      `\`${this.prefix} daily [@user]\` - Mostrar atividade diária (sua ou do usuário mencionado)`,
-      `\`${this.prefix} weekly [@user]\` - Mostrar atividade semanal`,
-      `\`${this.prefix} monthly [@user]\` - Mostrar atividade mensal`,
-      `\`${this.prefix} leaderboard\` - Mostrar top 10 usuários ativos hoje`,
-      `\`${this.prefix} help\` - Mostrar esta mensagem de ajuda`,
-      `\`${this.prefix} rolecheck @role [daily|weekly]\` - Verificar atividade dos membros de um cargo`
+      `\`${guildPrefix} ping\` - Verificar se o bot está funcionando`,
+      `\`${guildPrefix} daily [@user]\` - Mostrar atividade diária (sua ou do usuário mencionado)`,
+      `\`${guildPrefix} weekly [@user]\` - Mostrar atividade semanal`,
+      `\`${guildPrefix} monthly [@user]\` - Mostrar atividade mensal`,
+      `\`${guildPrefix} leaderboard\` - Mostrar top 10 usuários ativos hoje`,
+      `\`${guildPrefix} rolecheck @role [daily|weekly]\` - Verificar atividade dos membros de um cargo`,
+      `\`${guildPrefix} setguildid <id>\` - Definir ID da guild do Albion`,
+      `\`${guildPrefix} setprefix <prefix>\` - Definir novo prefixo para comandos`,
+      `\`${guildPrefix} setguildname <name>\` - Definir nome da guild`,
+      `\`${guildPrefix} competitors add <id>\` - Adicionar guild competidora`,
+      `\`${guildPrefix} competitors remove <id>\` - Remover guild competidora`,
+      `\`${guildPrefix} competitors list\` - Listar todas as guilds competidoras`,
+      `\`${guildPrefix} playermmr <player>\` - Verificar MMR do jogador`,
+      `\`${guildPrefix} refresh\` - Recarregar comandos slash`,
+      `\`${guildPrefix} help\` - Mostrar esta mensagem de ajuda`
     ].join('\n');
 
     await message.reply(commands);
@@ -320,6 +390,44 @@ class CommandHandler {
           const period = interaction.options.getString('period') || 'weekly';
           await this.handleRoleActivityCheck(interaction, role, period);
           break;
+        case 'settings':
+          switch (interaction.options.getSubcommand()) {
+            case 'setguildid':
+              const guildId = interaction.options.getString('id');
+              await this.handleSetGuildId(interaction, guildId);
+              break;
+            case 'setprefix':
+              const prefix = interaction.options.getString('prefix');
+              await this.handleSetPrefix(interaction, prefix);
+              break;
+            case 'setguildname':
+              const name = interaction.options.getString('name');
+              await this.handleSetGuildName(interaction, name);
+              break;
+          }
+          break;
+        case 'competitors':
+          switch (interaction.options.getSubcommand()) {
+            case 'add':
+              const addId = interaction.options.getString('id');
+              await this.handleAddCompetitor(interaction, addId);
+              break;
+            case 'remove':
+              const removeId = interaction.options.getString('id');
+              await this.handleRemoveCompetitor(interaction, removeId);
+              break;
+            case 'list':
+              await this.listCompetitors(interaction);
+              break;
+          }
+          break;
+        case 'playermmr':
+          const playerName = interaction.options.getString('player');
+          await this.handlePlayerMMR(interaction, playerName);
+          break;
+        case 'refresh':
+          await this.handleRefreshCommands(interaction);
+          break;
       }
     } catch (error) {
       console.error('Command error:', error.message);
@@ -442,6 +550,487 @@ class CommandHandler {
     } catch (error) {
       console.error('Leaderboard error:', error.message);
       await interaction.editReply('Failed to fetch leaderboard.');
+    }
+  }
+
+  async handleSetGuildId(source, albionGuildId) {
+    // Check if user has admin permissions
+    const member = source.member;
+    if (!member.permissions.has('ADMINISTRATOR')) {
+      const response = 'Você precisa ter permissões de administrador para usar este comando.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+      return;
+    }
+
+    try {
+      await prisma.guildSettings.update({
+        where: {
+          guildId: source.guildId
+        },
+        data: {
+          albionGuildId
+        }
+      });
+
+      const response = `ID da guild do Albion atualizado para: ${albionGuildId}`;
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    } catch (error) {
+      console.error('Error setting Albion guild ID:', error);
+      const response = 'Erro ao atualizar ID da guild do Albion.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    }
+  }
+
+  async handleSetPrefix(source, newPrefix) {
+    // Check admin permissions
+    const member = source.member;
+    if (!member.permissions.has('ADMINISTRATOR')) {
+      const response = 'Você precisa ter permissões de administrador para usar este comando.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+      return;
+    }
+
+    try {
+      await prisma.guildSettings.update({
+        where: { guildId: source.guildId },
+        data: { commandPrefix: newPrefix }
+      });
+
+      // Update cache
+      this.prefixCache.set(source.guildId, newPrefix);
+
+      const response = `Prefixo atualizado para: ${newPrefix}`;
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    } catch (error) {
+      console.error('Error setting prefix:', error);
+      const response = 'Erro ao atualizar prefixo.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    }
+  }
+
+  async handleSetGuildName(source, guildName) {
+    // Check admin permissions
+    const member = source.member;
+    if (!member.permissions.has('ADMINISTRATOR')) {
+      const response = 'Você precisa ter permissões de administrador para usar este comando.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+      return;
+    }
+
+    try {
+      await prisma.guildSettings.update({
+        where: { guildId: source.guildId },
+        data: { guildName }
+      });
+
+      const response = `Nome da guild atualizado para: ${guildName}`;
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    } catch (error) {
+      console.error('Error setting guild name:', error);
+      const response = 'Erro ao atualizar nome da guild.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    }
+  }
+
+  async handleAddCompetitor(source, competitorId) {
+    // Check admin permissions
+    const member = source.member;
+    if (!member.permissions.has('ADMINISTRATOR')) {
+      const response = 'Você precisa ter permissões de administrador para usar este comando.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+      return;
+    }
+
+    try {
+      const settings = await prisma.guildSettings.findUnique({
+        where: { guildId: source.guildId }
+      });
+
+      if (settings.competitorIds.length >= this.MAX_COMPETITORS) {
+        const response = `Limite máximo de ${this.MAX_COMPETITORS} guilds competidoras atingido. Remova alguma antes de adicionar outra.`;
+        if (source.commandName) {
+          await source.reply({ content: response, ephemeral: true });
+        } else {
+          await source.reply(response);
+        }
+        return;
+      }
+
+      if (settings.competitorIds.includes(competitorId)) {
+        const response = 'Esta guild já está na lista de competidores.';
+        if (source.commandName) {
+          await source.reply({ content: response, ephemeral: true });
+        } else {
+          await source.reply(response);
+        }
+        return;
+      }
+
+      await prisma.guildSettings.update({
+        where: { guildId: source.guildId },
+        data: {
+          competitorIds: {
+            push: competitorId
+          }
+        }
+      });
+
+      const response = `Guild competidora adicionada: ${competitorId}`;
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    } catch (error) {
+      console.error('Error adding competitor:', error);
+      const response = 'Erro ao adicionar guild competidora.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    }
+  }
+
+  async handleRemoveCompetitor(source, competitorId) {
+    // Check admin permissions
+    const member = source.member;
+    if (!member.permissions.has('ADMINISTRATOR')) {
+      const response = 'Você precisa ter permissões de administrador para usar este comando.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+      return;
+    }
+
+    try {
+      const settings = await prisma.guildSettings.findUnique({
+        where: { guildId: source.guildId }
+      });
+
+      if (!settings.competitorIds.includes(competitorId)) {
+        const response = 'Esta guild não está na lista de competidores.';
+        if (source.commandName) {
+          await source.reply({ content: response, ephemeral: true });
+        } else {
+          await source.reply(response);
+        }
+        return;
+      }
+
+      await prisma.guildSettings.update({
+        where: { guildId: source.guildId },
+        data: {
+          competitorIds: {
+            set: settings.competitorIds.filter(id => id !== competitorId)
+          }
+        }
+      });
+
+      const response = `Guild competidora removida: ${competitorId}`;
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    } catch (error) {
+      console.error('Error removing competitor:', error);
+      const response = 'Erro ao remover guild competidora.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    }
+  }
+
+  async listCompetitors(source) {
+    try {
+      const settings = await prisma.guildSettings.findUnique({
+        where: { guildId: source.guildId }
+      });
+
+      if (!settings.competitorIds.length) {
+        const response = 'Nenhuma guild competidora cadastrada.';
+        if (source.commandName) {
+          await source.reply({ content: response, ephemeral: true });
+        } else {
+          await source.reply(response);
+        }
+        return;
+      }
+
+      const response = [
+        '**Guilds Competidoras:**',
+        '',
+        ...settings.competitorIds.map((id, index) => `${index + 1}. ${id}`),
+        '',
+        `Total: ${settings.competitorIds.length}/${this.MAX_COMPETITORS}`
+      ].join('\n');
+
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    } catch (error) {
+      console.error('Error listing competitors:', error);
+      const response = 'Erro ao listar guilds competidoras.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    }
+  }
+
+  async handlePlayerMMR(source, playerName) {
+    try {
+      // Get guild settings
+      const settings = await prisma.guildSettings.findUnique({
+        where: { guildId: source.guildId }
+      });
+
+      if (!settings.albionGuildId) {
+        const response = 'ID da guild do Albion não configurado. Use /settings setguildid primeiro.';
+        if (source.commandName) {
+          await source.reply({ content: response, ephemeral: true });
+        } else {
+          await source.reply(response);
+        }
+        return;
+      }
+
+      if (!settings.competitorIds.length) {
+        const response = 'Nenhuma guild competidora configurada. Use /competitors add primeiro.';
+        if (source.commandName) {
+          await source.reply({ content: response, ephemeral: true });
+        } else {
+          await source.reply(response);
+        }
+        return;
+      }
+
+      // Fetch stats for all guilds
+      const mainGuildStats = await fetchGuildStats(settings.albionGuildId);
+      const competitorStats = await Promise.all(
+        settings.competitorIds.map(id => fetchGuildStats(id))
+      );
+
+      // Find player in any guild
+      const allPlayers = [
+        ...mainGuildStats,
+        ...competitorStats.flat()
+      ];
+
+      const player = allPlayers.find(p => 
+        p.name.toLowerCase() === playerName.toLowerCase()
+      );
+
+      if (!player) {
+        const response = 'Jogador não encontrado em nenhuma das guilds.';
+        if (source.commandName) {
+          await source.reply({ content: response, ephemeral: true });
+        } else {
+          await source.reply(response);
+        }
+        return;
+      }
+
+      const mainRole = getMainRole(player.roles);
+
+      // Calculate Global MMR
+      const globalPlayers = allPlayers.filter(p => {
+        const playerMainRole = getMainRole(p.roles);
+        return playerMainRole.index === mainRole.index && p.attendance >= 5;
+      });
+      const globalScores = calculatePlayerScores(globalPlayers, mainRole.index);
+      const globalBest = globalScores[0];
+      const globalWorst = globalScores[globalScores.length - 1];
+      const globalPlayerScore = globalScores.find(p => p.name === player.name);
+      const globalRank = globalScores.findIndex(p => p.name === player.name) + 1;
+
+      // Calculate Guild-only MMR
+      const guildPlayers = allPlayers.filter(p => {
+        const playerMainRole = getMainRole(p.roles);
+        return playerMainRole.index === mainRole.index && 
+               p.attendance >= 5 && 
+               p.guildName === player.guildName;
+      });
+      const guildScores = calculatePlayerScores(guildPlayers, mainRole.index);
+      const guildBest = guildScores[0];
+      const guildWorst = guildScores[guildScores.length - 1];
+      const guildPlayerScore = guildScores.find(p => p.name === player.name);
+      const guildRank = guildScores.findIndex(p => p.name === player.name) + 1;
+
+      // Helper function to format role-specific stats
+      function formatPlayerStats(player, roleIndex) {
+        const baseStats = `Participações: ${player.attendance} | IP: ${player.avgIp}`;
+        
+        switch(roleIndex) {
+          case 0: // Tank
+            return `${baseStats} | K/D: ${(player.deaths > 0 ? player.kills / player.deaths : player.kills).toFixed(2)} | Fame/Batalha: ${Math.round(player.killFame / player.attendance).toLocaleString()}`;
+          
+          case 1: // Support
+          case 2: // Healer
+            return `${baseStats} | K/D: ${(player.deaths > 0 ? player.kills / player.deaths : player.kills).toFixed(2)} | Cura/Batalha: ${Math.round(player.heal / player.attendance).toLocaleString()}`;
+          
+          case 3: // DPS Melee
+          case 4: // DPS Ranged
+            return `${baseStats} | K/D: ${(player.deaths > 0 ? player.kills / player.deaths : player.kills).toFixed(2)} | Dano/Batalha: ${Math.round(player.damage / player.attendance).toLocaleString()}`;
+          
+          case 5: // Battlemount
+            return `${baseStats} | K/D: ${(player.deaths > 0 ? player.kills / player.deaths : player.kills).toFixed(2)} | Fame/Batalha: ${Math.round(player.killFame / player.attendance).toLocaleString()}`;
+        }
+      }
+
+      // Format role-specific stats
+      let roleStats = '';
+      switch(mainRole.index) {
+        case 0: // Tank
+          roleStats = `K/D: ${(player.deaths > 0 ? player.kills / player.deaths : player.kills).toFixed(2)} | Fame/Batalha: ${Math.round(player.killFame / player.attendance).toLocaleString()}`;
+          break;
+        
+        case 1: // Support
+        case 2: // Healer
+          roleStats = `K/D: ${(player.deaths > 0 ? player.kills / player.deaths : player.kills).toFixed(2)} | Cura/Batalha: ${Math.round(player.heal / player.attendance).toLocaleString()}`;
+          break;
+        
+        case 3: // DPS Melee
+        case 4: // DPS Ranged
+          roleStats = `K/D: ${(player.deaths > 0 ? player.kills / player.deaths : player.kills).toFixed(2)} | Fame/Batalha: ${Math.round(player.killFame / player.attendance).toLocaleString()} | Dano/Batalha: ${Math.round(player.damage / player.attendance).toLocaleString()}`;
+          break;
+        
+        case 5: // Battlemount
+          roleStats = `K/D: ${(player.deaths > 0 ? player.kills / player.deaths : player.kills).toFixed(2)} | Fame/Batalha: ${Math.round(player.killFame / player.attendance).toLocaleString()}`;
+          break;
+      }
+
+      const response = [
+        '**Análise dos últimos 30 dias (batalhas com 20+ players)**',
+        '',
+        `**${player.name}** [${player.guildName}] - ${mainRole.name}`,
+        `Participação: ${player.attendance} batalhas | IP: ${player.avgIp}`,
+        roleStats,
+        '',
+        '**MMR Global:**',
+        `${globalPlayerScore.score}/100 (#${globalRank} de ${globalScores.length} ${mainRole.name}s)`,
+        '',
+        '**MMR na Guild:**',
+        `${guildPlayerScore.score}/100 (#${guildRank} de ${guildScores.length} ${mainRole.name}s)`,
+        '',
+        '**Top Players da Role (Global):**',
+        `🥇 ${globalBest.name}: ${globalBest.score}/100 (${globalBest.guildName}) | ${formatPlayerStats(globalBest, mainRole.index)}`,
+        `🔻 ${globalWorst.name}: ${globalWorst.score}/100 (${globalWorst.guildName}) | ${formatPlayerStats(globalWorst, mainRole.index)}`,
+        '',
+        `**Top Players da Role (${player.guildName}):**`,
+        `🥇 ${guildBest.name}: ${guildBest.score}/100 | ${formatPlayerStats(guildBest, mainRole.index)}`,
+        `🔻 ${guildWorst.name}: ${guildWorst.score}/100 | ${formatPlayerStats(guildWorst, mainRole.index)}`
+      ].join('\n');
+
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    } catch (error) {
+      console.error('Error calculating player MMR:', error);
+      const response = 'Erro ao calcular MMR do jogador.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    }
+  }
+
+  async handleRefreshCommands(source) {
+    // Check if user has admin permissions
+    const member = source.member;
+    if (!member.permissions.has('ADMINISTRATOR')) {
+      const response = 'Você precisa ter permissões de administrador para usar este comando.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+      return;
+    }
+
+    try {
+      const initialResponse = 'Recarregando comandos slash...';
+      if (source.commandName) {
+        await source.reply({ content: initialResponse, ephemeral: true });
+      } else {
+        await source.reply(initialResponse);
+      }
+
+      await registerCommands(source.client);
+
+      const successResponse = 'Comandos slash recarregados com sucesso!';
+      if (source.commandName) {
+        if (source.replied) {
+          await source.editReply(successResponse);
+        } else {
+          await source.reply({ content: successResponse, ephemeral: true });
+        }
+      } else {
+        await source.channel.send(successResponse);
+      }
+    } catch (error) {
+      console.error('Error refreshing commands:', error);
+      const errorResponse = 'Erro ao recarregar comandos slash.';
+      if (source.commandName) {
+        if (source.replied) {
+          await source.editReply(errorResponse);
+        } else {
+          await source.reply({ content: errorResponse, ephemeral: true });
+        }
+      } else {
+        await source.channel.send(errorResponse);
+      }
     }
   }
 }
