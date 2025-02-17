@@ -34,6 +34,23 @@ const commands = [
   new SlashCommandBuilder()
     .setName('ping')
     .setDescription('Verificar latência do bot'),
+  new SlashCommandBuilder()
+    .setName('rolecheck')
+    .setDescription('Verificar atividade dos membros de um cargo')
+    .addRoleOption(option => 
+      option
+        .setName('role')
+        .setDescription('Cargo para verificar')
+        .setRequired(true))
+    .addStringOption(option =>
+      option
+        .setName('period')
+        .setDescription('Período para verificar')
+        .addChoices(
+          { name: 'Hoje', value: 'daily' },
+          { name: 'Semanal', value: 'weekly' }
+        )
+        .setRequired(false)),
 ];
 
 async function registerCommands(client) {

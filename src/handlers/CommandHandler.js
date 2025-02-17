@@ -32,6 +32,15 @@ class CommandHandler {
         case 'help':
           await this.showHelp(message);
           break;
+        case 'rolecheck':
+          const role = message.mentions.roles.first();
+          if (!role) {
+            await message.reply('Por favor, mencione um cargo para verificar.');
+            return;
+          }
+          const period = args[1]?.toLowerCase() === 'daily' ? 'daily' : 'weekly';
+          await this.handleRoleActivityCheck(message, role, period);
+          break;
       }
     } catch (error) {
       console.error('Command error:', error.message);
@@ -59,7 +68,8 @@ class CommandHandler {
       `\`${this.prefix} weekly [@user]\` - Mostrar atividade semanal`,
       `\`${this.prefix} monthly [@user]\` - Mostrar atividade mensal`,
       `\`${this.prefix} leaderboard\` - Mostrar top 10 usuários ativos hoje`,
-      `\`${this.prefix} help\` - Mostrar esta mensagem de ajuda`
+      `\`${this.prefix} help\` - Mostrar esta mensagem de ajuda`,
+      `\`${this.prefix} rolecheck @role [daily|weekly]\` - Verificar atividade dos membros de um cargo`
     ].join('\n');
 
     await message.reply(commands);
@@ -204,120 +214,72 @@ class CommandHandler {
     }
   }
 
-  async handleRoleActivityCheck(message) {
+  async handleRoleActivityCheck(source, role, period = 'weekly') {
+    const isInteraction = source.commandName === 'rolecheck';
+    const guildId = isInteraction ? source.guildId : source.guild.id;
+    const reply = (content) => isInteraction ? source.reply(content) : source.reply(content);
+
     try {
-      const args = message.content.split(' ');
-      const mentionedRole = message.mentions.roles.first();
-      const period = args[args.length - 1]?.toLowerCase();
-      const isDaily = period === 'day';
-      const ACTIVITY_THRESHOLD = 0.05; // 5% of top 10 average
-
-      if (!mentionedRole) {
-        return message.reply('Please mention a role to check activity. Usage: `!albiongwrolecheck @role [day]`');
-      }
-
+      const isDaily = period === 'daily';
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const weekStart = getWeekStart(today);
 
-      // Get top 10 active users based on period
-      const topUsers = await prisma[isDaily ? 'dailyActivity' : 'weeklyActivity'].findMany({
-        where: isDaily 
-          ? { date: today }
-          : { weekStart },
-        orderBy: [
-          { voiceTimeSeconds: 'desc' },
-        ],
-        take: 10
+      // Get role members
+      const members = role.members;
+
+      // Get activity data
+      const activityData = await prisma[isDaily ? 'dailyActivity' : 'weeklyActivity'].findMany({
+        where: {
+          guildId,
+          date: isDaily ? today : getWeekStart(today)
+        }
       });
 
-      if (topUsers.length === 0) {
-        return message.reply(`No activity recorded for this ${isDaily ? 'day' : 'week'}.`);
-      }
+      // Calculate threshold from top performers
+      const topPerformers = activityData
+        .sort((a, b) => b.voiceTimeSeconds - a.voiceTimeSeconds)
+        .slice(0, 10);
 
-      // Calculate average of top 10
-      const topAvgVoiceTime = topUsers.reduce((sum, user) => sum + user.voiceTimeSeconds, 0) / topUsers.length;
-      const minimumThreshold = topAvgVoiceTime * ACTIVITY_THRESHOLD; // 5% of top performers
+      const topAvgVoiceTime = topPerformers.reduce((sum, user) => 
+        sum + user.voiceTimeSeconds, 0) / topPerformers.length;
 
-      // Get all members with the mentioned role
-      const roleMembers = mentionedRole.members;
-      
-      // Get activity for all role members
+      const minimumThreshold = topAvgVoiceTime * 0.05; // 5% threshold
+
+      // Find inactive members
       const veryInactiveMembers = [];
       
-      for (const [memberId, member] of roleMembers) {
-        const memberActivity = await prisma[isDaily ? 'dailyActivity' : 'weeklyActivity'].findUnique({
-          where: isDaily
-            ? {
-                userId_date: {
-                  userId: memberId,
-                  date: today
-                }
-              }
-            : {
-                userId_weekStart: {
-                  userId: memberId,
-                  weekStart
-                }
-              }
-        });
+      for (const [memberId, member] of members) {
+        const activity = activityData.find(a => a.userId === memberId);
+        const voiceTime = activity?.voiceTimeSeconds || 0;
+        const percentage = ((voiceTime / topAvgVoiceTime) * 100).toFixed(1);
 
-        const voiceTime = memberActivity?.voiceTimeSeconds || 0;
-        if (voiceTime <= minimumThreshold) {  // Changed to <= for minimum threshold
-          veryInactiveMembers.push({
-            member,
-            voiceTime,
-            percentage: ((voiceTime / topAvgVoiceTime) * 100).toFixed(1)
-          });
+        if (voiceTime < minimumThreshold) {
+          veryInactiveMembers.push({ member, voiceTime, percentage });
         }
       }
 
       // Sort by voice time
       veryInactiveMembers.sort((a, b) => b.voiceTime - a.voiceTime);
 
-      // Create header message
-      const headerMessage = [
-        `**Very Inactive Members Check for ${mentionedRole.name} (${isDaily ? 'Today' : 'This Week'})**`,
-        `Top 10 Average Voice Time: ${formatDuration(topAvgVoiceTime)}`,
-        `Minimum Required (5%): ${formatDuration(minimumThreshold)}`,
+      // Send results
+      const response = [
+        `**Verificação de Atividade: ${role.name}**`,
+        `Período: ${isDaily ? 'Hoje' : 'Esta Semana'}`,
+        `Média Top 10: ${formatDuration(topAvgVoiceTime)}`,
+        `Mínimo Requerido (5%): ${formatDuration(minimumThreshold)}`,
         '',
-        '**Members Below 5% Activity:**'
-      ].join('\n');
-
-      await message.reply(headerMessage);
-
-      // Split member list into chunks
-      const CHUNK_SIZE = 20;
-      const memberChunks = [];
-      
-      for (let i = 0; i < veryInactiveMembers.length; i += CHUNK_SIZE) {
-        const chunk = veryInactiveMembers.slice(i, i + CHUNK_SIZE);
-        const chunkMessage = chunk.map(({ member, voiceTime, percentage }) => 
+        '**Membros Abaixo do Limite:**',
+        ...veryInactiveMembers.map(({ member, voiceTime, percentage }) => 
           `${member.displayName}: ${formatDuration(voiceTime)} (${percentage}%)`
-        ).join('\n');
-
-        if (chunkMessage.length > 0) {
-          memberChunks.push(chunkMessage);
-        }
-      }
-
-      // Send each chunk as a separate message
-      for (const chunk of memberChunks) {
-        await message.channel.send(chunk);
-      }
-
-      // Send summary message
-      const summaryMessage = [
+        ),
         '',
-        `Total: ${veryInactiveMembers.length} members below 5% activity threshold`,
-        `Period: ${isDaily ? 'Today' : 'This Week'}`
+        `Total: ${veryInactiveMembers.length} membros abaixo do limite de 5%`
       ].join('\n');
 
-      await message.channel.send(summaryMessage);
-
+      await reply(response);
     } catch (error) {
-      console.error('Error checking role activity:', error);
-      await message.reply('Failed to check role activity.');
+      console.error('Role check error:', error.message);
+      await reply('Erro ao verificar atividade do cargo.');
     }
   }
 
@@ -352,6 +314,11 @@ class CommandHandler {
           break;
         case 'leaderboard':
           await this.handleLeaderboardCommand(interaction);
+          break;
+        case 'rolecheck':
+          const role = interaction.options.getRole('role');
+          const period = interaction.options.getString('period') || 'weekly';
+          await this.handleRoleActivityCheck(interaction, role, period);
           break;
       }
     } catch (error) {
