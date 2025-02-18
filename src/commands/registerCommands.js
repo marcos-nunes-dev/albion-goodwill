@@ -3,7 +3,7 @@ const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 const commands = [
   new SlashCommandBuilder()
     .setName('stats')
-    .setDescription('Check your activity stats')
+    .setDescription('Check your activity stats ')
     .addSubcommand(subcommand =>
       subcommand
         .setName('daily')
