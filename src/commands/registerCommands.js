@@ -1,145 +1,234 @@
-const { REST } = require('@discordjs/rest');
-const { Routes } = require('discord-api-types/v9');
-const { commandMetadata } = require('../config/commandMetadata');
+const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 
-const DISCORD_OPTION_TYPES = {
-    STRING: 3,
-    INTEGER: 4,
-    BOOLEAN: 5,
-    USER: 6,
-    CHANNEL: 7,
-    ROLE: 8,
-    MENTIONABLE: 9,
-    NUMBER: 10
-};
-
-function buildCommandData(name, metadata) {
-    const data = {
-        name,
-        description: metadata.description,
-        defaultPermission: !metadata.permissions,
-        options: []
-    };
-
-    if (metadata.subcommands) {
-        data.options = Object.entries(metadata.subcommands).map(([subName, subMeta]) => ({
-            type: 1, // SUB_COMMAND
-            name: subName,
-            description: subMeta.description,
-            options: buildOptionsArray(subMeta.options)
-        }));
-    } else if (metadata.options) {
-        data.options = buildOptionsArray(metadata.options);
-    }
-
-    return data;
-}
-
-function buildOptionsArray(options) {
-    if (!options) return [];
-
-    return Object.entries(options).map(([name, option]) => ({
-        type: DISCORD_OPTION_TYPES[option.type] || DISCORD_OPTION_TYPES.STRING,
-        name,
-        description: option.description,
-        required: option.required ?? false,
-        choices: option.choices,
-        channelTypes: option.channelTypes,
-        minValue: option.minValue,
-        maxValue: option.maxValue,
-        autocomplete: option.autocomplete
-    }));
-}
+const commands = [
+  new SlashCommandBuilder()
+    .setName('stats')
+    .setDescription('Check your activity stats')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('daily')
+        .setDescription('Check your daily activity stats')
+        .addUserOption(option =>
+          option.setName('user')
+            .setDescription('User to check stats for (optional)')
+            .setRequired(false)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('weekly')
+        .setDescription('Check your weekly activity stats')
+        .addUserOption(option =>
+          option.setName('user')
+            .setDescription('User to check stats for (optional)')
+            .setRequired(false)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('monthly')
+        .setDescription('Check your monthly activity stats')
+        .addUserOption(option =>
+          option.setName('user')
+            .setDescription('User to check stats for (optional)')
+            .setRequired(false))),
+  new SlashCommandBuilder()
+    .setName('leaderboard')
+    .setDescription('Show server activity leaderboard'),
+  new SlashCommandBuilder()
+    .setName('ping')
+    .setDescription('Verificar latência do bot'),
+  new SlashCommandBuilder()
+    .setName('rolecheck')
+    .setDescription('Verificar atividade dos membros de um cargo')
+    .addRoleOption(option => 
+      option
+        .setName('role')
+        .setDescription('Cargo para verificar')
+        .setRequired(true))
+    .addStringOption(option =>
+      option
+        .setName('period')
+        .setDescription('Período para verificar')
+        .addChoices(
+          { name: 'Hoje', value: 'daily' },
+          { name: 'Semanal', value: 'weekly' }
+        )
+        .setRequired(false)),
+  new SlashCommandBuilder()
+    .setName('settings')
+    .setDescription('Configurar bot')
+    .setDefaultMemberPermissions('0')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('setguildid')
+        .setDescription('Definir ID da guild do Albion')
+        .addStringOption(option =>
+          option
+            .setName('id')
+            .setDescription('ID da guild do Albion')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('setprefix')
+        .setDescription('Definir prefixo dos comandos')
+        .addStringOption(option =>
+          option
+            .setName('prefix')
+            .setDescription('Novo prefixo para comandos (ex: !ag)')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('setguildname')
+        .setDescription('Definir nome da guild')
+        .addStringOption(option =>
+          option
+            .setName('name')
+            .setDescription('Nome da guild no Albion')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('setrole')
+        .setDescription('Definir cargo para uma role do Albion')
+        .addStringOption(option =>
+          option
+            .setName('type')
+            .setDescription('Tipo de role')
+            .setRequired(true)
+            .addChoices(
+              { name: 'Tank', value: 'tank' },
+              { name: 'Support', value: 'support' },
+              { name: 'Healer', value: 'healer' },
+              { name: 'DPS Melee', value: 'melee' },
+              { name: 'DPS Ranged', value: 'ranged' },
+              { name: 'Battlemount', value: 'mount' }
+            ))
+        .addRoleOption(option =>
+          option
+            .setName('role')
+            .setDescription('Cargo do Discord')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('setverifiedrole')
+        .setDescription('Definir cargo para membros com nickname verificado')
+        .addRoleOption(option =>
+          option
+            .setName('role')
+            .setDescription('Cargo para membros verificados')
+            .setRequired(true))),
+  new SlashCommandBuilder()
+    .setName('competitors')
+    .setDescription('Gerenciar guilds competidoras')
+    .setDefaultMemberPermissions('0')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('add')
+        .setDescription('Adicionar guild competidora')
+        .addStringOption(option =>
+          option
+            .setName('id')
+            .setDescription('ID da guild competidora do Albion')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('remove')
+        .setDescription('Remover guild competidora')
+        .addStringOption(option =>
+          option
+            .setName('id')
+            .setDescription('ID da guild competidora do Albion')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('list')
+        .setDescription('Listar todas as guilds competidoras')),
+  new SlashCommandBuilder()
+    .setName('playermmr')
+    .setDescription('Verificar MMR do jogador')
+    .addStringOption(option =>
+      option
+        .setName('player')
+        .setDescription('Nome do jogador')
+        .setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('refresh')
+    .setDescription('Recarregar comandos slash (apenas admin)')
+    .setDefaultMemberPermissions('0'),
+  new SlashCommandBuilder()
+    .setName('mmrrank')
+    .setDescription('Mostrar ranking MMR por role da guild')
+    .addStringOption(option =>
+      option
+        .setName('role')
+        .setDescription('Role específica para ver ranking completo')
+        .addChoices(
+          { name: 'Tank', value: 'tank' },
+          { name: 'Support', value: 'support' },
+          { name: 'Healer', value: 'healer' },
+          { name: 'DPS Melee', value: 'melee' },
+          { name: 'DPS Ranged', value: 'ranged' },
+          { name: 'Battlemount', value: 'mount' }
+        )
+        .setRequired(false)),
+  new SlashCommandBuilder()
+    .setName('updatemembersrole')
+    .setDescription('Atualizar roles dos membros baseado na main class')
+    .setDefaultMemberPermissions('0') // Admin only
+    .addRoleOption(option =>
+        option
+            .setName('members')
+            .setDescription('Cargo dos membros para atualizar')
+            .setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('register')
+    .setDescription('Registrar seu personagem do Albion')
+    .addStringOption(option =>
+        option
+            .setName('region')
+            .setDescription('Região do servidor')
+            .setRequired(true)
+            .addChoices(
+                { name: 'América', value: 'america' },
+                { name: 'Europa', value: 'europe' },
+                { name: 'Ásia', value: 'asia' }
+            ))
+    .addStringOption(option =>
+        option
+            .setName('nickname')
+            .setDescription('Seu nickname no Albion Online')
+            .setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('unregister')
+    .setDescription('Remover registro de um jogador')
+    .setDefaultMemberPermissions('0') // Admin only
+    .addStringOption(option =>
+        option
+            .setName('playername')
+            .setDescription('Nome do jogador no Albion')
+            .setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('checkregistrations')
+    .setDescription('Verificar membros não registrados em um cargo')
+    .setDefaultMemberPermissions('0') // Admin only
+    .addRoleOption(option =>
+        option
+            .setName('role')
+            .setDescription('Cargo para verificar registros')
+            .setRequired(true)),
+];
 
 async function registerCommands(client) {
-    try {
-        console.log('Started refreshing application (/) commands.');
+  try {
+    console.log('Started refreshing application (/) commands.');
 
-        const commands = Object.entries(commandMetadata)
-            .filter(([_, metadata]) => metadata.slashCommand)
-            .map(([name, metadata]) => buildCommandData(name, metadata));
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
-        const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
+    await rest.put(
+      Routes.applicationCommands(client.user.id),
+      { body: commands }
+    );
 
-        // Register commands globally
-        await rest.put(
-            Routes.applicationCommands(client.user.id),
-            { body: commands }
-        );
-
-        // Register guild-specific commands if needed
-        if (process.env.DEVELOPMENT_GUILD_ID) {
-            await rest.put(
-                Routes.applicationGuildCommands(client.user.id, process.env.DEVELOPMENT_GUILD_ID),
-                { body: commands }
-            );
-        }
-
-        console.log('Successfully reloaded application (/) commands.');
-    } catch (error) {
-        console.error('Error refreshing commands:', error);
-        throw error; // Re-throw to handle in the calling code
-    }
+    console.log('Successfully reloaded application (/) commands.');
+  } catch (error) {
+    console.error('Error registering commands:', error);
+  }
 }
 
-function validateCommandMetadata() {
-    const errors = [];
-
-    for (const [commandName, metadata] of Object.entries(commandMetadata)) {
-        // Validate basic properties
-        if (!metadata.category) {
-            errors.push(`Command "${commandName}" is missing category`);
-        }
-        if (!metadata.description) {
-            errors.push(`Command "${commandName}" is missing description`);
-        }
-        if (!metadata.usage) {
-            errors.push(`Command "${commandName}" is missing usage information`);
-        }
-
-        // Validate subcommands
-        if (metadata.subcommands) {
-            for (const [subName, subMeta] of Object.entries(metadata.subcommands)) {
-                if (!subMeta.description) {
-                    errors.push(`Subcommand "${commandName} ${subName}" is missing description`);
-                }
-                if (subMeta.options) {
-                    validateOptions(`${commandName} ${subName}`, subMeta.options, errors);
-                }
-            }
-        }
-
-        // Validate options
-        if (metadata.options) {
-            validateOptions(commandName, metadata.options, errors);
-        }
-    }
-
-    if (errors.length > 0) {
-        console.error('Command metadata validation failed:');
-        errors.forEach(error => console.error(`- ${error}`));
-        throw new Error('Invalid command metadata');
-    }
-}
-
-function validateOptions(commandPath, options, errors) {
-    for (const [optionName, option] of Object.entries(options)) {
-        if (!option.type) {
-            errors.push(`Option "${optionName}" in "${commandPath}" is missing type`);
-        }
-        if (!option.description) {
-            errors.push(`Option "${optionName}" in "${commandPath}" is missing description`);
-        }
-        if (option.type && !DISCORD_OPTION_TYPES[option.type]) {
-            errors.push(`Option "${optionName}" in "${commandPath}" has invalid type: ${option.type}`);
-        }
-        if (option.choices && !Array.isArray(option.choices)) {
-            errors.push(`Option "${optionName}" in "${commandPath}" has invalid choices format`);
-        }
-    }
-}
-
-module.exports = {
-    registerCommands,
-    validateCommandMetadata
-}; 
+module.exports = { registerCommands, commands }; 
