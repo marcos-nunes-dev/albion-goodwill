@@ -533,6 +533,9 @@ class CommandHandler {
           const roleToCheck = interaction.options.getRole('role');
           await this.handleCheckRegistrations(interaction, roleToCheck);
           break;
+        case 'help':
+          await this.showHelp(interaction);
+          break;
       }
     } catch (error) {
       console.error('Command error:', error.message);
@@ -734,7 +737,6 @@ class CommandHandler {
       } else {
         await source.reply(response);
       }
-    }
   }
 
   async handleSetGuildName(source, guildName) {

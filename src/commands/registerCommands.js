@@ -212,6 +212,9 @@ const commands = [
             .setName('role')
             .setDescription('Cargo para verificar registros')
             .setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('help')
+    .setDescription('Mostrar lista de comandos disponíveis'),
 ];
 
 async function registerCommands(client) {
