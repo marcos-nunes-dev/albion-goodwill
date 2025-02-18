@@ -1584,9 +1584,16 @@ class CommandHandler {
         await source.reply(initialResponse);
       }
 
+      // Select API endpoint based on region
+      const apiEndpoint = {
+        'america': 'https://murderledger.albiononline2d.com',
+        'europe': 'https://murderledger-europe.albiononline2d.com',
+        'asia': 'https://murderledger-asia.albiononline2d.com'
+      }[region];
+
       // Search for player
       const searchResponse = await axios.get(
-        `https://murderledger.albiononline2d.com/api/player-search/${encodeURIComponent(nickname)}`
+        `${apiEndpoint}/api/player-search/${encodeURIComponent(nickname)}`
       );
 
       const { results } = searchResponse.data;
