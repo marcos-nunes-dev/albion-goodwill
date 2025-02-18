@@ -2,7 +2,6 @@ const BaseCommand = require('./BaseCommand');
 const prisma = require('../../config/prisma');
 const ResponseFormatter = require('../../utils/ResponseFormatter');
 const { REGIONS } = require('../../config/constants');
-const axios = require('axios');
 
 class RegistrationCommands extends BaseCommand {
     async handleRegister(source, region, nickname) {
@@ -28,16 +27,6 @@ class RegistrationCommands extends BaseCommand {
             if (errors.length) {
                 await this.showUsage(source, commandName);
                 await this.reply(source, ResponseFormatter.error(errors[0]), true);
-                return;
-            }
-
-            // Check if player exists in the specified region
-            const playerExists = await this.checkPlayerInRegion(nickname, region.toLowerCase());
-            if (!playerExists) {
-                await this.reply(source, ResponseFormatter.error(
-                    `Jogador "${nickname}" não encontrado na região ${region}.\n` +
-                    'Verifique se o nome está correto e se você selecionou a região correta.'
-                ), true);
                 return;
             }
 
@@ -71,30 +60,6 @@ class RegistrationCommands extends BaseCommand {
             ), true);
         } catch (error) {
             await this.handleError(error, source, 'Erro ao registrar jogador.');
-        }
-    }
-
-    async checkPlayerInRegion(nickname, region) {
-        try {
-            const baseUrl = {
-                'america': 'https://murderledger.albiononline2d.com',
-                'europe': 'https://murderledger-europe.albiononline2d.com',
-                'asia': 'https://murderledger-asia.albiononline2d.com'
-            }[region];
-
-            if (!baseUrl) return false;
-
-            const response = await axios.get(`${baseUrl}/api/player-search/${encodeURIComponent(nickname)}`);
-            
-            if (!response.data?.results) return false;
-
-            // Case insensitive search for exact match
-            return response.data.results.some(name => 
-                name.toLowerCase() === nickname.toLowerCase()
-            );
-        } catch (error) {
-            console.error('Error checking player:', error);
-            return false;
         }
     }
 
