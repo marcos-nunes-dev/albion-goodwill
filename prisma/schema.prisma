@@ -5,57 +5,63 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
 
 model DailyActivity {
-  id                        String   @id @default(uuid())
-  userId                    String
-  guildId                   String
-  username                  String
-  date                      DateTime @db.Date
-  messageCount              Int      @default(0)
-  voiceTimeSeconds          Int      @default(0)
-  afkTimeSeconds            Int      @default(0)
-  mutedDeafenedTimeSeconds  Int      @default(0)
-  lastUpdated              DateTime @default(now()) @db.Timestamptz
+  id                      Int                @id @default(autoincrement())
+  userId                  String
+  guildId                 String
+  date                    DateTime           @db.Date
+  voiceTimeSeconds        Int                @default(0)
+  messageCount            Int                @default(0)
+  afkTimeSeconds          Int                @default(0)
+  mutedDeafenedTimeSeconds Int               @default(0)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  guild                  GuildSettings      @relation(fields: [guildId], references: [guildId])
+  registration           PlayerRegistration? @relation(fields: [userId, guildId], references: [userId, guildId])
 
   @@unique([userId, guildId, date])
   @@index([date])
   @@index([guildId, date])
-  @@map("daily_activity")
 }
 
 model WeeklyActivity {
-  id                        String   @id @default(uuid())
-  userId                    String
-  guildId                   String
-  username                  String
-  weekStart                 DateTime @db.Date
-  messageCount              Int      @default(0)
-  voiceTimeSeconds          Int      @default(0)
-  afkTimeSeconds            Int      @default(0)
-  mutedDeafenedTimeSeconds  Int      @default(0)
-  lastUpdated              DateTime @default(now()) @db.Timestamptz
+  id                      Int                @id @default(autoincrement())
+  userId                  String
+  guildId                 String
+  weekStart               DateTime           @db.Date
+  voiceTimeSeconds        Int                @default(0)
+  messageCount            Int                @default(0)
+  afkTimeSeconds          Int                @default(0)
+  mutedDeafenedTimeSeconds Int               @default(0)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  guild                  GuildSettings      @relation(fields: [guildId], references: [guildId])
+  registration           PlayerRegistration? @relation(fields: [userId, guildId], references: [userId, guildId])
 
-  @@unique([userId, guildId, weekStart], map: "weekly_activity_user_guild_week")
-  @@map("weekly_activity")
+  @@unique([userId, guildId, weekStart])
+  @@index([weekStart])
+  @@index([guildId, weekStart])
 }
 
 model MonthlyActivity {
-  id                        String   @id @default(uuid())
-  userId                    String
-  guildId                   String
-  username                  String
-  monthStart                DateTime @db.Date
-  messageCount              Int      @default(0)
-  voiceTimeSeconds          Int      @default(0)
-  afkTimeSeconds            Int      @default(0)
-  mutedDeafenedTimeSeconds  Int      @default(0)
-  lastUpdated              DateTime @default(now()) @db.Timestamptz
+  id                      Int                @id @default(autoincrement())
+  userId                  String
+  guildId                 String
+  monthStart              DateTime           @db.Date
+  voiceTimeSeconds        Int                @default(0)
+  messageCount            Int                @default(0)
+  afkTimeSeconds          Int                @default(0)
+  mutedDeafenedTimeSeconds Int               @default(0)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  guild                  GuildSettings      @relation(fields: [guildId], references: [guildId])
+  registration           PlayerRegistration? @relation(fields: [userId, guildId], references: [userId, guildId])
 
-  @@unique([userId, guildId, monthStart], map: "monthly_activity_user_guild_month")
-  @@map("monthly_activity")
+  @@unique([userId, guildId, monthStart])
+  @@index([monthStart])
+  @@index([guildId, monthStart])
 }
 
 model VoiceSession {
@@ -76,22 +82,43 @@ model VoiceSession {
 }
 
 model GuildSettings {
-  id                    String   @id @default(uuid())
-  guildId              String   @unique
-  guildName            String
-  afkChannelId         String?
-  commandPrefix        String   @default("!albiongw")
-  albionGuildId        String?
-  competitorIds        String[] @default([])
-  tankRoleId           String?
-  supportRoleId        String?
-  healerRoleId         String?
-  dpsMeleeRoleId       String?
-  dpsRangedRoleId      String?
-  battlemountRoleId    String?
-  nicknameVerifiedId   String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                     Int                  @id @default(autoincrement())
+  guildId               String               @unique
+  guildName             String?
+  commandPrefix         String?
+  albionGuildId         String?
+  competitorIds         String[]             @default([])
+  tankRoleId            String?
+  supportRoleId         String?
+  healerRoleId          String?
+  dpsMeleeRoleId        String?
+  dpsRangedRoleId       String?
+  battlemountRoleId     String?
+  nicknameVerifiedId    String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  dailyActivities       DailyActivity[]
+  weeklyActivities      WeeklyActivity[]
+  monthlyActivities     MonthlyActivity[]
+  playerRegistrations   PlayerRegistration[]
 
-  @@map("guild_settings")
+  @@index([albionGuildId])
+}
+
+model PlayerRegistration {
+  id          Int           @id @default(autoincrement())
+  userId      String
+  guildId     String
+  playerName  String
+  region      String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  guild       GuildSettings @relation(fields: [guildId], references: [guildId])
+  dailyActivities  DailyActivity[]
+  weeklyActivities WeeklyActivity[]
+  monthlyActivities MonthlyActivity[]
+
+  @@unique([userId, guildId])
+  @@index([playerName])
+  @@index([userId, guildId])
 } 
