@@ -409,12 +409,17 @@ class CommandHandler {
     const afkTime = formatDuration(stats.afkTimeSeconds);
     const mutedTime = stats.mutedTimeSeconds ? formatDuration(stats.mutedTimeSeconds) : '0m';
 
+    // Calculate total active time (excluding AFK time)
+    const activeTimeSeconds = stats.voiceTimeSeconds - stats.afkTimeSeconds;
+    const totalTimeSeconds = stats.voiceTimeSeconds;
+
+    // Calculate percentages based on total time
     let activePercentage = 0;
     let afkPercentage = 0;
 
-    if (stats.voiceTimeSeconds > 0) {
-      activePercentage = Math.round((stats.voiceTimeSeconds - stats.afkTimeSeconds) / stats.voiceTimeSeconds * 100);
-      afkPercentage = Math.round(stats.afkTimeSeconds / stats.voiceTimeSeconds * 100);
+    if (totalTimeSeconds > 0) {
+        activePercentage = Math.round((activeTimeSeconds / totalTimeSeconds) * 100);
+        afkPercentage = Math.round((stats.afkTimeSeconds / totalTimeSeconds) * 100);
     }
 
     // Ensure percentages are valid numbers
@@ -422,19 +427,19 @@ class CommandHandler {
     afkPercentage = isNaN(afkPercentage) ? 0 : afkPercentage;
 
     return [
-      `**${period} Activity Stats:**`,
-      ' ',
-      '**Voice Activity:**',
-      `🎤 Active Voice: ${voiceTime}`,
-      `💤 AFK: ${afkTime}`,
-      `🔇 Muted: ${mutedTime}`,
-      ' ',
-      '**Chat Activity:**',
-      `💬 Messages: ${stats.messageCount}`,
-      ' ',
-      '**Active Time Distribution:**',
-      `🟩 Active: ${activePercentage}%`,
-      `⬜ AFK: ${afkPercentage}%`
+        `**${period} Activity Stats:**`,
+        ' ',
+        '**Voice Activity:**',
+        `🎤 Active Voice: ${voiceTime}`,
+        `💤 AFK: ${afkTime}`,
+        `🔇 Muted: ${mutedTime}`,
+        ' ',
+        '**Chat Activity:**',
+        `💬 Messages: ${stats.messageCount}`,
+        ' ',
+        '**Active Time Distribution:**',
+        `🟩 Active: ${activePercentage}%`,
+        `⬜ AFK: ${afkPercentage}%`
     ].filter(Boolean).join('\n');
   }
 
