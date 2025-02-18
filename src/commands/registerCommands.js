@@ -215,6 +215,65 @@ const commands = [
   new SlashCommandBuilder()
     .setName('help')
     .setDescription('Mostrar lista de comandos disponíveis'),
+  new SlashCommandBuilder()
+    .setName('setup')
+    .setDescription('Configuração inicial completa do bot')
+    .setDefaultMemberPermissions('0') // Admin only
+    .addStringOption(option =>
+      option
+        .setName('guildname')
+        .setDescription('Nome da guild no Albion')
+        .setRequired(true))
+    .addStringOption(option =>
+      option
+        .setName('commandprefix')
+        .setDescription('Prefixo para comandos (ex: !ag)')
+        .setRequired(true))
+    .addStringOption(option =>
+      option
+        .setName('albionguildid')
+        .setDescription('ID da guild do Albion')
+        .setRequired(true))
+    .addStringOption(option =>
+      option
+        .setName('competitorsids')
+        .setDescription('IDs das guilds competidoras (separados por vírgula)')
+        .setRequired(true))
+    .addRoleOption(option =>
+      option
+        .setName('battlemountrole')
+        .setDescription('Cargo para Battlemount')
+        .setRequired(true))
+    .addRoleOption(option =>
+      option
+        .setName('meleerole')
+        .setDescription('Cargo para DPS Melee')
+        .setRequired(true))
+    .addRoleOption(option =>
+      option
+        .setName('rangedrole')
+        .setDescription('Cargo para DPS Ranged')
+        .setRequired(true))
+    .addRoleOption(option =>
+      option
+        .setName('healerrole')
+        .setDescription('Cargo para Healer')
+        .setRequired(true))
+    .addRoleOption(option =>
+      option
+        .setName('supportrole')
+        .setDescription('Cargo para Support')
+        .setRequired(true))
+    .addRoleOption(option =>
+      option
+        .setName('tankrole')
+        .setDescription('Cargo para Tank')
+        .setRequired(true))
+    .addRoleOption(option =>
+      option
+        .setName('verifiedrole')
+        .setDescription('Cargo para membros com nickname verificado')
+        .setRequired(true)),
 ];
 
 async function registerCommands(client) {
