@@ -92,6 +92,7 @@ model GuildSettings {
   dpsRangedRoleId       String?
   battlemountRoleId     String?
   nicknameVerifiedId    String?
+  afkChannelId          String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   dailyActivities       DailyActivity[]
