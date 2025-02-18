@@ -8,18 +8,17 @@ datasource db {
 }
 
 model DailyActivity {
-  id                      Int                @id @default(autoincrement())
+  id                      Int       @id @default(autoincrement())
   userId                  String
   guildId                 String
-  date                    DateTime           @db.Date
-  voiceTimeSeconds        Int                @default(0)
-  messageCount            Int                @default(0)
-  afkTimeSeconds          Int                @default(0)
-  mutedDeafenedTimeSeconds Int               @default(0)
-  createdAt              DateTime           @default(now())
-  updatedAt              DateTime           @updatedAt
-  guild                  GuildSettings      @relation(fields: [guildId], references: [guildId])
-  registration           PlayerRegistration? @relation(fields: [userId, guildId], references: [userId, guildId])
+  date                    DateTime  @db.Date
+  voiceTimeSeconds        Int       @default(0)
+  messageCount            Int       @default(0)
+  afkTimeSeconds          Int       @default(0)
+  mutedDeafenedTimeSeconds Int      @default(0)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  guild                  GuildSettings @relation(fields: [guildId], references: [guildId])
 
   @@unique([userId, guildId, date])
   @@index([date])
@@ -27,18 +26,17 @@ model DailyActivity {
 }
 
 model WeeklyActivity {
-  id                      Int                @id @default(autoincrement())
+  id                      Int       @id @default(autoincrement())
   userId                  String
   guildId                 String
-  weekStart               DateTime           @db.Date
-  voiceTimeSeconds        Int                @default(0)
-  messageCount            Int                @default(0)
-  afkTimeSeconds          Int                @default(0)
-  mutedDeafenedTimeSeconds Int               @default(0)
-  createdAt              DateTime           @default(now())
-  updatedAt              DateTime           @updatedAt
-  guild                  GuildSettings      @relation(fields: [guildId], references: [guildId])
-  registration           PlayerRegistration? @relation(fields: [userId, guildId], references: [userId, guildId])
+  weekStart               DateTime  @db.Date
+  voiceTimeSeconds        Int       @default(0)
+  messageCount            Int       @default(0)
+  afkTimeSeconds          Int       @default(0)
+  mutedDeafenedTimeSeconds Int      @default(0)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  guild                  GuildSettings @relation(fields: [guildId], references: [guildId])
 
   @@unique([userId, guildId, weekStart])
   @@index([weekStart])
@@ -46,18 +44,17 @@ model WeeklyActivity {
 }
 
 model MonthlyActivity {
-  id                      Int                @id @default(autoincrement())
+  id                      Int       @id @default(autoincrement())
   userId                  String
   guildId                 String
-  monthStart              DateTime           @db.Date
-  voiceTimeSeconds        Int                @default(0)
-  messageCount            Int                @default(0)
-  afkTimeSeconds          Int                @default(0)
-  mutedDeafenedTimeSeconds Int               @default(0)
-  createdAt              DateTime           @default(now())
-  updatedAt              DateTime           @updatedAt
-  guild                  GuildSettings      @relation(fields: [guildId], references: [guildId])
-  registration           PlayerRegistration? @relation(fields: [userId, guildId], references: [userId, guildId])
+  monthStart              DateTime  @db.Date
+  voiceTimeSeconds        Int       @default(0)
+  messageCount            Int       @default(0)
+  afkTimeSeconds          Int       @default(0)
+  mutedDeafenedTimeSeconds Int      @default(0)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  guild                  GuildSettings @relation(fields: [guildId], references: [guildId])
 
   @@unique([userId, guildId, monthStart])
   @@index([monthStart])
@@ -82,12 +79,12 @@ model VoiceSession {
 }
 
 model GuildSettings {
-  id                     Int                  @id @default(autoincrement())
-  guildId               String               @unique
+  id                     Int       @id @default(autoincrement())
+  guildId               String    @unique
   guildName             String?
   commandPrefix         String?
   albionGuildId         String?
-  competitorIds         String[]             @default([])
+  competitorIds         String[]  @default([])
   tankRoleId            String?
   supportRoleId         String?
   healerRoleId          String?
@@ -95,8 +92,8 @@ model GuildSettings {
   dpsRangedRoleId       String?
   battlemountRoleId     String?
   nicknameVerifiedId    String?
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
   dailyActivities       DailyActivity[]
   weeklyActivities      WeeklyActivity[]
   monthlyActivities     MonthlyActivity[]
@@ -114,9 +111,6 @@ model PlayerRegistration {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   guild       GuildSettings @relation(fields: [guildId], references: [guildId])
-  dailyActivities  DailyActivity[]
-  weeklyActivities WeeklyActivity[]
-  monthlyActivities MonthlyActivity[]
 
   @@unique([userId, guildId])
   @@index([playerName])
