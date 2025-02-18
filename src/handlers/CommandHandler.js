@@ -737,6 +737,7 @@ class CommandHandler {
       } else {
         await source.reply(response);
       }
+    }
   }
 
   async handleSetGuildName(source, guildName) {
