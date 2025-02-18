@@ -81,6 +81,37 @@ const commands = [
           option
             .setName('name')
             .setDescription('Nome da guild no Albion')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('setrole')
+        .setDescription('Definir cargo para uma role do Albion')
+        .addStringOption(option =>
+          option
+            .setName('type')
+            .setDescription('Tipo de role')
+            .setRequired(true)
+            .addChoices(
+              { name: 'Tank', value: 'tank' },
+              { name: 'Support', value: 'support' },
+              { name: 'Healer', value: 'healer' },
+              { name: 'DPS Melee', value: 'melee' },
+              { name: 'DPS Ranged', value: 'ranged' },
+              { name: 'Battlemount', value: 'mount' }
+            ))
+        .addRoleOption(option =>
+          option
+            .setName('role')
+            .setDescription('Cargo do Discord')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('setverifiedrole')
+        .setDescription('Definir cargo para membros com nickname verificado')
+        .addRoleOption(option =>
+          option
+            .setName('role')
+            .setDescription('Cargo para membros verificados')
             .setRequired(true))),
   new SlashCommandBuilder()
     .setName('competitors')
@@ -136,6 +167,15 @@ const commands = [
           { name: 'Battlemount', value: 'mount' }
         )
         .setRequired(false)),
+  new SlashCommandBuilder()
+    .setName('updatemembersrole')
+    .setDescription('Atualizar roles dos membros baseado na main class')
+    .setDefaultMemberPermissions('0') // Admin only
+    .addRoleOption(option =>
+        option
+            .setName('members')
+            .setDescription('Cargo dos membros para atualizar')
+            .setRequired(true)),
 ];
 
 async function registerCommands(client) {

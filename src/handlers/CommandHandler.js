@@ -134,15 +134,26 @@ class CommandHandler {
       `\`${guildPrefix} monthly [@user]\` - Mostrar atividade mensal`,
       `\`${guildPrefix} leaderboard\` - Mostrar top 10 usuários ativos hoje`,
       `\`${guildPrefix} rolecheck @role [daily|weekly]\` - Verificar atividade dos membros de um cargo`,
+      '',
+      '**Comandos de Administrador:**',
       `\`${guildPrefix} setguildid <id>\` - Definir ID da guild do Albion`,
       `\`${guildPrefix} setprefix <prefix>\` - Definir novo prefixo para comandos`,
       `\`${guildPrefix} setguildname <name>\` - Definir nome da guild`,
+      `\`${guildPrefix} setrole <type> @role\` - Definir cargo para uma role do Albion`,
+      `\`${guildPrefix} setverifiedrole @role\` - Definir cargo para membros verificados`,
+      `\`${guildPrefix} updatemembersrole @role\` - Atualizar roles dos membros baseado na main class`,
+      '',
+      '**Comandos de Competidores:**',
       `\`${guildPrefix} competitors add <id>\` - Adicionar guild competidora`,
       `\`${guildPrefix} competitors remove <id>\` - Remover guild competidora`,
       `\`${guildPrefix} competitors list\` - Listar todas as guilds competidoras`,
+      '',
+      '**Comandos de MMR:**',
       `\`${guildPrefix} playermmr <player>\` - Verificar MMR do jogador`,
+      `\`${guildPrefix} mmrrank [role]\` - Mostrar ranking MMR por role da guild`,
+      '',
+      '**Outros Comandos:**',
       `\`${guildPrefix} refresh\` - Recarregar comandos slash`,
-      `\`${guildPrefix} mmrrank\` - Mostrar ranking MMR por role da guild`,
       `\`${guildPrefix} help\` - Mostrar esta mensagem de ajuda`
     ].join('\n');
 
@@ -419,7 +430,8 @@ class CommandHandler {
           await this.handleRoleActivityCheck(interaction, role, period);
           break;
         case 'settings':
-          switch (interaction.options.getSubcommand()) {
+          const subcommand = interaction.options.getSubcommand();
+          switch (subcommand) {
             case 'setguildid':
               const guildId = interaction.options.getString('id');
               await this.handleSetGuildId(interaction, guildId);
@@ -431,6 +443,15 @@ class CommandHandler {
             case 'setguildname':
               const name = interaction.options.getString('name');
               await this.handleSetGuildName(interaction, name);
+              break;
+            case 'setrole':
+              const type = interaction.options.getString('type');
+              const role = interaction.options.getRole('role');
+              await this.handleSetRole(interaction, type, role);
+              break;
+            case 'setverifiedrole':
+              const verifiedRole = interaction.options.getRole('role');
+              await this.handleSetVerifiedRole(interaction, verifiedRole);
               break;
           }
           break;
@@ -458,6 +479,10 @@ class CommandHandler {
           break;
         case 'mmrrank':
           await this.handleMMRRank(interaction);
+          break;
+        case 'updatemembersrole':
+          const membersRole = interaction.options.getRole('members');
+          await this.handleUpdateMembersRole(interaction, membersRole);
           break;
       }
     } catch (error) {
@@ -1224,6 +1249,241 @@ class CommandHandler {
         } else {
           await source.followUp({ content: response, ephemeral: true });
         }
+      } else {
+        await source.reply(response);
+      }
+    }
+  }
+
+  async handleSetRole(source, type, role) {
+    // Check if user has admin permissions
+    const member = source.member;
+    if (!member.permissions.has('ADMINISTRATOR')) {
+      const response = 'Você precisa ter permissões de administrador para usar este comando.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+      return;
+    }
+
+    try {
+      const roleMap = {
+        'tank': 'tankRoleId',
+        'support': 'supportRoleId',
+        'healer': 'healerRoleId',
+        'melee': 'dpsMeleeRoleId',
+        'ranged': 'dpsRangedRoleId',
+        'mount': 'battlemountRoleId'
+      };
+
+      const fieldToUpdate = roleMap[type];
+      if (!fieldToUpdate) {
+        const response = 'Tipo de role inválido.';
+        if (source.commandName) {
+          await source.reply({ content: response, ephemeral: true });
+        } else {
+          await source.reply(response);
+        }
+        return;
+      }
+
+      await prisma.guildSettings.update({
+        where: {
+          guildId: source.guildId
+        },
+        data: {
+          [fieldToUpdate]: role.id
+        }
+      });
+
+      const response = `Cargo ${role.name} definido como ${type}.`;
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    } catch (error) {
+      console.error('Error setting role:', error);
+      const response = 'Erro ao definir cargo.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    }
+  }
+
+  async handleUpdateMembersRole(source, membersRole) {
+    // Check admin permissions
+    if (!source.member.permissions.has('ADMINISTRATOR')) {
+        const response = 'Você precisa ter permissões de administrador para usar este comando.';
+        if (source.commandName) {
+            await source.reply({ content: response, ephemeral: true });
+        } else {
+            await source.reply(response);
+        }
+        return;
+    }
+
+    try {
+        // Get guild settings
+        const settings = await prisma.guildSettings.findUnique({
+            where: { guildId: source.guildId }
+        });
+
+        // Check if guild has Albion guild ID configured
+        if (!settings?.albionGuildId) {
+            const response = 'ID da guild do Albion não configurado. Use /settings setguildid primeiro.';
+            if (source.commandName) {
+                await source.reply({ content: response, ephemeral: true });
+            } else {
+                await source.reply(response);
+            }
+            return;
+        }
+
+        // Check if all role IDs are configured
+        const roleIds = {
+            'Tank': settings.tankRoleId,
+            'Support': settings.supportRoleId,
+            'Healer': settings.healerRoleId,
+            'DPS Melee': settings.dpsMeleeRoleId,
+            'DPS Ranged': settings.dpsRangedRoleId,
+            'Battlemount': settings.battlemountRoleId
+        };
+
+        const missingRoles = Object.entries(roleIds)
+            .filter(([_, id]) => !id)
+            .map(([role]) => role);
+
+        if (missingRoles.length > 0) {
+            const response = `As seguintes roles precisam ser configuradas primeiro usando /settings setrole:\n${missingRoles.join(', ')}`;
+            if (source.commandName) {
+                await source.reply({ content: response, ephemeral: true });
+            } else {
+                await source.reply(response);
+            }
+            return;
+        }
+
+        // Initial response
+        const initialResponse = 'Atualizando roles dos membros...';
+        if (source.commandName) {
+            await source.reply({ content: initialResponse, ephemeral: true });
+        } else {
+            await source.reply(initialResponse);
+        }
+
+        // Fetch guild stats from Albion API
+        const guildStats = await fetchGuildStats(settings.albionGuildId);
+        if (!guildStats || !guildStats.length) {
+            const response = 'Não foi possível obter dados da guild.';
+            if (source.commandName) {
+                await source.editReply(response);
+            } else {
+                await source.channel.send(response);
+            }
+            return;
+        }
+
+        // Get all members with the specified role
+        const members = membersRole.members;
+        
+        let updated = 0;
+        let notFound = 0;
+        const notFoundMembers = [];
+
+        // Process each member
+        for (const [memberId, member] of members) {
+            // Find player in guild stats
+            const player = guildStats.find(p => 
+                p.name.toLowerCase() === member.displayName.toLowerCase()
+            );
+
+            if (player) {
+                const mainRole = getMainRole(player.roles);
+                const roleId = roleIds[mainRole.name];
+                const role = await source.guild.roles.fetch(roleId);
+
+                if (role) {
+                    // Add the role if member doesn't have it
+                    if (!member.roles.cache.has(roleId)) {
+                        await member.roles.add(role);
+                        updated++;
+                    }
+                }
+            } else {
+                notFound++;
+                notFoundMembers.push(member.displayName);
+            }
+        }
+
+        // Final response
+        const finalResponse = [
+            `✅ Atualização completa!`,
+            `📊 Resultados:`,
+            `- ${updated} membros atualizados`,
+            `- ${notFound} membros não encontrados na guild`,
+            notFoundMembers.length > 0 ? `\nMembros não encontrados:\n${notFoundMembers.join(', ')}` : ''
+        ].filter(Boolean).join('\n');
+
+        if (source.commandName) {
+            await source.editReply(finalResponse);
+        } else {
+            await source.channel.send(finalResponse);
+        }
+
+    } catch (error) {
+        console.error('Error updating member roles:', error);
+        const response = 'Erro ao atualizar roles dos membros.';
+        if (source.commandName) {
+            if (source.replied) {
+                await source.editReply(response);
+            } else {
+                await source.reply({ content: response, ephemeral: true });
+            }
+        } else {
+            await source.channel.send(response);
+        }
+    }
+  }
+
+  async handleSetVerifiedRole(source, role) {
+    // Check if user has admin permissions
+    const member = source.member;
+    if (!member.permissions.has('ADMINISTRATOR')) {
+      const response = 'Você precisa ter permissões de administrador para usar este comando.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+      return;
+    }
+
+    try {
+      await prisma.guildSettings.update({
+        where: {
+          guildId: source.guildId
+        },
+        data: {
+          nicknameVerifiedId: role.id
+        }
+      });
+
+      const response = `Cargo ${role.name} definido como cargo de nickname verificado.`;
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
+      } else {
+        await source.reply(response);
+      }
+    } catch (error) {
+      console.error('Error setting verified role:', error);
+      const response = 'Erro ao definir cargo de nickname verificado.';
+      if (source.commandName) {
+        await source.reply({ content: response, ephemeral: true });
       } else {
         await source.reply(response);
       }

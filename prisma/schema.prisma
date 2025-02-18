@@ -76,15 +76,22 @@ model VoiceSession {
 }
 
 model GuildSettings {
-  id                String   @id @default(uuid())
-  guildId           String   @unique
-  guildName         String
-  afkChannelId      String?
-  commandPrefix     String   @default("!albiongw")
-  albionGuildId     String?
-  competitorIds     String[] @default([])
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                    String   @id @default(uuid())
+  guildId              String   @unique
+  guildName            String
+  afkChannelId         String?
+  commandPrefix        String   @default("!albiongw")
+  albionGuildId        String?
+  competitorIds        String[] @default([])
+  tankRoleId           String?
+  supportRoleId        String?
+  healerRoleId         String?
+  dpsMeleeRoleId       String?
+  dpsRangedRoleId      String?
+  battlemountRoleId    String?
+  nicknameVerifiedId   String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@map("guild_settings")
 } 
