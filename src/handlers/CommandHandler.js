@@ -1493,7 +1493,15 @@ class CommandHandler {
           const role = await source.guild.roles.fetch(roleId);
 
           if (role) {
-            // Add the role if member doesn't have it
+            // Remove all class roles first
+            const allClassRoles = Object.values(roleIds).filter(id => id);
+            for (const classRoleId of allClassRoles) {
+              if (member.roles.cache.has(classRoleId)) {
+                await member.roles.remove(classRoleId);
+              }
+            }
+
+            // Add the new role
             if (!member.roles.cache.has(roleId)) {
               await member.roles.add(role);
               updated++;
