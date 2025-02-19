@@ -12,9 +12,24 @@ module.exports = new Command({
     cooldown: 10,
     async execute(message, args, handler) {
         try {
-            // Handle both slash commands and prefix commands
             const isSlash = message.commandName === 'presenceleaderboard';
-            
+            const reply = async (options) => {
+                if (isSlash) {
+                    if (!message.deferred && !message.replied) {
+                        return await message.reply(options);
+                    } else {
+                        return await message.followUp(options);
+                    }
+                } else {
+                    return await message.reply(options);
+                }
+            };
+
+            // Defer the reply for slash commands
+            if (isSlash) {
+                await message.deferReply();
+            }
+
             // Get period from args or interaction options
             let period;
             if (isSlash) {
@@ -29,11 +44,7 @@ module.exports = new Command({
                     .setColor(0xFF0000)
                     .setDescription('❌ Invalid period. Use: daily, weekly, or monthly');
                 
-                if (isSlash) {
-                    await message.reply({ embeds: [errorEmbed], ephemeral: true });
-                } else {
-                    await message.reply({ embeds: [errorEmbed] });
-                }
+                await reply({ embeds: [errorEmbed] });
                 return;
             }
 
@@ -112,11 +123,7 @@ module.exports = new Command({
                     .setDescription(`No activity recorded for this ${period} period.`)
                     .setFooter({ text: 'Try joining a voice channel or sending messages!' });
 
-                if (isSlash) {
-                    await message.reply({ embeds: [noStatsEmbed] });
-                } else {
-                    await message.reply({ embeds: [noStatsEmbed] });
-                }
+                await reply({ embeds: [noStatsEmbed] });
                 return;
             }
 
@@ -197,12 +204,6 @@ module.exports = new Command({
                     .setFooter({ text: `Total Members: ${validEntries.length}` });
             };
 
-            // Send summary embed
-            const initialResponse = await (isSlash ?
-                message.reply({ embeds: [summaryEmbed], fetchReply: true }) :
-                message.reply({ embeds: [summaryEmbed] })
-            );
-
             // Initialize pagination
             const itemsPerPage = 10;
             const pages = Math.ceil(validEntries.length / itemsPerPage);
@@ -234,8 +235,11 @@ module.exports = new Command({
                 );
             };
 
-            // Send initial page
-            const pageMessage = await (isSlash ?
+            // Send summary embed
+            await reply({ embeds: [summaryEmbed] });
+
+            // Send initial page with buttons
+            const pageMessage = await (isSlash ? 
                 message.followUp({
                     embeds: [getPageEmbed(0)],
                     components: [getButtons(0)]
@@ -253,10 +257,12 @@ module.exports = new Command({
             });
 
             collector.on('collect', async (interaction) => {
-                if (interaction.user.id !== (isSlash ? message.user.id : message.author.id)) {
-                    await interaction.reply({ 
-                        content: 'Only the command user can navigate pages.', 
-                        ephemeral: true 
+                // Check if the interaction is from the command user
+                const commandUserId = isSlash ? message.user.id : message.author.id;
+                if (interaction.user.id !== commandUserId) {
+                    await interaction.reply({
+                        content: 'Only the command user can navigate pages.',
+                        ephemeral: true
                     });
                     return;
                 }
@@ -282,8 +288,12 @@ module.exports = new Command({
                 });
             });
 
-            collector.on('end', () => {
-                pageMessage.edit({ components: [] }).catch(() => {});
+            collector.on('end', async () => {
+                try {
+                    await pageMessage.edit({ components: [] });
+                } catch (error) {
+                    console.error('Error removing buttons:', error);
+                }
             });
 
         } catch (error) {
@@ -293,14 +303,18 @@ module.exports = new Command({
                 .setTitle('❌ Error')
                 .setDescription('Failed to generate leaderboard. Please try again later.');
 
-            if (isSlash) {
-                if (!message.replied) {
-                    await message.reply({ embeds: [errorEmbed], ephemeral: true });
+            try {
+                if (isSlash) {
+                    if (!message.deferred && !message.replied) {
+                        await message.reply({ embeds: [errorEmbed] });
+                    } else {
+                        await message.followUp({ embeds: [errorEmbed] });
+                    }
                 } else {
-                    await message.followUp({ embeds: [errorEmbed], ephemeral: true });
+                    await message.reply({ embeds: [errorEmbed] });
                 }
-            } else {
-                await message.reply({ embeds: [errorEmbed] });
+            } catch (e) {
+                console.error('Error sending error message:', e);
             }
         }
     }
