@@ -6,18 +6,47 @@ module.exports = new Command({
     description: 'Refresh and re-register all slash commands',
     category: 'admin',
     permissions: ['ADMINISTRATOR'],
-    usage: '',
-    cooldown: 10,
+    cooldown: 30,
     async execute(message, args, handler) {
         try {
-            const reply = await message.reply('🔄 Refreshing slash commands...');
+            const isSlash = message.commandName === 'refreshcommands';
             
-            await registerSlashCommands(handler.client);
+            // Initial response
+            const initialResponse = 'Recarregando comandos slash...';
+            if (isSlash) {
+                await message.reply({ content: initialResponse, ephemeral: true });
+            } else {
+                await message.reply(initialResponse);
+            }
+
+            // Wait for client to be ready
+            await message.client.application?.commands.fetch();
             
-            await reply.edit('✅ Successfully refreshed all slash commands!');
+            // Register commands
+            await registerSlashCommands(message.client);
+
+            const successResponse = 'Comandos slash recarregados com sucesso!';
+            if (isSlash) {
+                if (message.replied) {
+                    await message.editReply(successResponse);
+                } else {
+                    await message.reply({ content: successResponse, ephemeral: true });
+                }
+            } else {
+                await message.channel.send(successResponse);
+            }
         } catch (error) {
             console.error('Error refreshing commands:', error);
-            await message.reply('❌ Error refreshing slash commands. Check console for details.');
+            const errorResponse = 'Erro ao recarregar comandos slash.';
+            if (isSlash) {
+                if (message.replied) {
+                    await message.editReply(errorResponse);
+                } else {
+                    await message.reply({ content: errorResponse, ephemeral: true });
+                }
+            } else {
+                await message.channel.send(errorResponse);
+            }
         }
     }
 }); 

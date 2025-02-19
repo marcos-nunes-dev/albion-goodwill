@@ -10,15 +10,15 @@ module.exports = new Command({
     usage: '[daily|weekly|monthly]',
     aliases: ['plb'],
     cooldown: 10,
-    async execute(source, args, handler) {
+    async execute(message, args, handler) {
         try {
-            // Determine if this is a slash command or message command
-            const isInteraction = source.commandName !== undefined;
+            // Handle both slash commands and prefix commands
+            const isSlash = message.commandName === 'presenceleaderboard';
             
             // Get period from args or interaction options
             let period;
-            if (isInteraction) {
-                period = (source.options?.getString('period') || 'monthly').toLowerCase();
+            if (isSlash) {
+                period = (message.options?.getString('period') || 'monthly').toLowerCase();
             } else {
                 period = (args[0] || 'monthly').toLowerCase();
             }
@@ -29,10 +29,10 @@ module.exports = new Command({
                     .setColor(0xFF0000)
                     .setDescription('❌ Invalid period. Use: daily, weekly, or monthly');
                 
-                if (isInteraction) {
-                    await source.reply({ embeds: [errorEmbed], ephemeral: true });
+                if (isSlash) {
+                    await message.reply({ embeds: [errorEmbed], ephemeral: true });
                 } else {
-                    await source.reply({ embeds: [errorEmbed] });
+                    await message.reply({ embeds: [errorEmbed] });
                 }
                 return;
             }
@@ -69,7 +69,7 @@ module.exports = new Command({
             // First try to get aggregated stats
             stats = await prisma[table].findMany({
                 where: {
-                    guildId: source.guild.id,
+                    guildId: message.guild.id,
                     [dateField]: date
                 }
             });
@@ -83,7 +83,7 @@ module.exports = new Command({
                 stats = await prisma.dailyActivity.groupBy({
                     by: ['userId'],
                     where: {
-                        guildId: source.guild.id,
+                        guildId: message.guild.id,
                         date: {
                             gte: monthStart,
                             lt: nextMonth
@@ -112,10 +112,10 @@ module.exports = new Command({
                     .setDescription(`No activity recorded for this ${period} period.`)
                     .setFooter({ text: 'Try joining a voice channel or sending messages!' });
 
-                if (isInteraction) {
-                    await source.reply({ embeds: [noStatsEmbed] });
+                if (isSlash) {
+                    await message.reply({ embeds: [noStatsEmbed] });
                 } else {
-                    await source.reply({ embeds: [noStatsEmbed] });
+                    await message.reply({ embeds: [noStatsEmbed] });
                 }
                 return;
             }
@@ -123,7 +123,7 @@ module.exports = new Command({
             // Process and sort all members
             const memberActivities = await Promise.all(
                 stats.map(async (stat) => {
-                    const member = await source.guild.members.fetch(stat.userId).catch(() => null);
+                    const member = await message.guild.members.fetch(stat.userId).catch(() => null);
                     if (!member) return null;
 
                     const activeTime = stat.voiceTimeSeconds - stat.afkTimeSeconds;
@@ -197,14 +197,11 @@ module.exports = new Command({
                     .setFooter({ text: `Total Members: ${validEntries.length}` });
             };
 
-            // Send initial response
-            let initialMessage;
-            if (isInteraction) {
-                await source.reply({ embeds: [summaryEmbed] });
-                initialMessage = await source.fetchReply();
-            } else {
-                initialMessage = await source.reply({ embeds: [summaryEmbed] });
-            }
+            // Send summary embed
+            const initialResponse = await (isSlash ?
+                message.reply({ embeds: [summaryEmbed], fetchReply: true }) :
+                message.reply({ embeds: [summaryEmbed] })
+            );
 
             // Initialize pagination
             const itemsPerPage = 10;
@@ -238,10 +235,16 @@ module.exports = new Command({
             };
 
             // Send initial page
-            const pageMessage = await source.channel.send({
-                embeds: [getPageEmbed(0)],
-                components: [getButtons(0)]
-            });
+            const pageMessage = await (isSlash ?
+                message.followUp({
+                    embeds: [getPageEmbed(0)],
+                    components: [getButtons(0)]
+                }) :
+                message.channel.send({
+                    embeds: [getPageEmbed(0)],
+                    components: [getButtons(0)]
+                })
+            );
 
             // Create button collector
             const collector = pageMessage.createMessageComponentCollector({
@@ -250,8 +253,7 @@ module.exports = new Command({
             });
 
             collector.on('collect', async (interaction) => {
-                const userId = isInteraction ? source.user.id : source.author.id;
-                if (interaction.user.id !== userId) {
+                if (interaction.user.id !== (isSlash ? message.user.id : message.author.id)) {
                     await interaction.reply({ 
                         content: 'Only the command user can navigate pages.', 
                         ephemeral: true 
@@ -291,14 +293,14 @@ module.exports = new Command({
                 .setTitle('❌ Error')
                 .setDescription('Failed to generate leaderboard. Please try again later.');
 
-            if (isInteraction) {
-                if (!source.replied) {
-                    await source.reply({ embeds: [errorEmbed], ephemeral: true });
+            if (isSlash) {
+                if (!message.replied) {
+                    await message.reply({ embeds: [errorEmbed], ephemeral: true });
                 } else {
-                    await source.followUp({ embeds: [errorEmbed], ephemeral: true });
+                    await message.followUp({ embeds: [errorEmbed], ephemeral: true });
                 }
             } else {
-                await source.reply({ embeds: [errorEmbed] });
+                await message.reply({ embeds: [errorEmbed] });
             }
         }
     }
