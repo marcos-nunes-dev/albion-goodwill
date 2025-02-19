@@ -34,8 +34,8 @@ module.exports = new Command({
 
             // Get period (daily, weekly or monthly)
             const period = isSlash ?
-                (message.options.getString('period') || 'daily') :
-                (args[1] || 'daily');
+                (message.options.getString('period') || 'monthly') :
+                (args[1] || 'monthly');
 
             // Validate period
             const validPeriods = ['daily', 'weekly', 'monthly'];
@@ -55,6 +55,7 @@ module.exports = new Command({
             let date;
             let table;
             let dateField;
+            let stats = [];
 
             switch (normalizedPeriod) {
                 case 'daily':
@@ -87,8 +88,8 @@ module.exports = new Command({
                 return;
             }
 
-            // Get activity stats for these members
-            const stats = await prisma[table].findMany({
+            // First try to get aggregated stats
+            stats = await prisma[table].findMany({
                 where: {
                     guildId: message.guild.id,
                     [dateField]: date,
@@ -97,6 +98,40 @@ module.exports = new Command({
                     }
                 }
             });
+
+            // If no monthly stats found, aggregate from daily data
+            if (stats.length === 0 && normalizedPeriod === 'monthly') {
+                const monthStart = getMonthStart(new Date());
+                const nextMonth = new Date(monthStart);
+                nextMonth.setMonth(nextMonth.getMonth() + 1);
+
+                stats = await prisma.dailyActivity.groupBy({
+                    by: ['userId'],
+                    where: {
+                        guildId: message.guild.id,
+                        userId: {
+                            in: [...members.keys()]
+                        },
+                        date: {
+                            gte: monthStart,
+                            lt: nextMonth
+                        }
+                    },
+                    _sum: {
+                        voiceTimeSeconds: true,
+                        afkTimeSeconds: true,
+                        messageCount: true
+                    }
+                });
+
+                // Transform grouped data to match regular stats format
+                stats = stats.map(stat => ({
+                    userId: stat.userId,
+                    voiceTimeSeconds: stat._sum.voiceTimeSeconds || 0,
+                    afkTimeSeconds: stat._sum.afkTimeSeconds || 0,
+                    messageCount: stat._sum.messageCount || 0
+                }));
+            }
 
             // Calculate top 10 average activity
             const sortedStats = [...stats].sort((a, b) => {

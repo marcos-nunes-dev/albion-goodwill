@@ -34,15 +34,20 @@ module.exports = new Command({
                     dateField = 'date';
                     break;
                 case 'weekly':
-                    date = getWeekStart();
+                    date = getWeekStart(new Date());
                     table = 'weeklyActivity';
                     dateField = 'weekStart';
                     break;
                 case 'monthly':
-                    date = getMonthStart();
+                    date = getMonthStart(new Date());
                     table = 'monthlyActivity';
                     dateField = 'monthStart';
                     break;
+            }
+
+            // Validate date before querying
+            if (!(date instanceof Date) || isNaN(date)) {
+                throw new Error('Invalid date generated');
             }
 
             // First try to get aggregated stats
@@ -55,7 +60,7 @@ module.exports = new Command({
 
             // If no monthly stats found, aggregate from daily data
             if (stats.length === 0 && period === 'monthly') {
-                const monthStart = getMonthStart();
+                const monthStart = getMonthStart(new Date());
                 const nextMonth = new Date(monthStart);
                 nextMonth.setMonth(nextMonth.getMonth() + 1);
 
