@@ -14,43 +14,76 @@ module.exports = new Command({
     cooldown: 10,
     async execute(message, args, handler) {
         try {
-            // Check if a role was mentioned
-            const role = message.mentions.roles.first();
+            // Handle both slash commands and prefix commands
+            const isSlash = message.commandName === 'presencecheck';
+            
+            // Get role based on command type
+            const role = isSlash ? 
+                message.options.getRole('role') : 
+                message.mentions.roles.first();
+
             if (!role) {
-                await message.reply('Please mention a role to check.');
+                const response = 'Please mention a role to check.';
+                if (isSlash) {
+                    await message.reply({ content: response, ephemeral: true });
+                } else {
+                    await message.reply(response);
+                }
                 return;
             }
 
             // Get period (daily, weekly or monthly)
-            const period = (args[1] || 'daily').toLowerCase();
-            if (!['daily', 'weekly', 'monthly'].includes(period)) {
-                await message.reply('Invalid period. Use: daily, weekly or monthly');
+            const period = isSlash ?
+                (message.options.getString('period') || 'daily') :
+                (args[1] || 'daily');
+
+            // Validate period
+            const validPeriods = ['daily', 'weekly', 'monthly'];
+            const normalizedPeriod = period.toLowerCase();
+            
+            if (!validPeriods.includes(normalizedPeriod)) {
+                const response = 'Invalid period. Use: daily, weekly or monthly';
+                if (isSlash) {
+                    await message.reply({ content: response, ephemeral: true });
+                } else {
+                    await message.reply(response);
+                }
                 return;
             }
 
             // Get the appropriate date and table based on period
-            let date = new Date();
+            let date;
             let table;
             let dateField;
 
-            if (period === 'daily') {
-                date.setHours(0, 0, 0, 0);
-                table = 'dailyActivity';
-                dateField = 'date';
-            } else if (period === 'weekly') {
-                date = getWeekStart();
-                table = 'weeklyActivity';
-                dateField = 'weekStart';
-            } else {
-                date = getMonthStart();
-                table = 'monthlyActivity';
-                dateField = 'monthStart';
+            switch (normalizedPeriod) {
+                case 'daily':
+                    date = new Date();
+                    date.setHours(0, 0, 0, 0);
+                    table = 'dailyActivity';
+                    dateField = 'date';
+                    break;
+                case 'weekly':
+                    date = getWeekStart(new Date());
+                    table = 'weeklyActivity';
+                    dateField = 'weekStart';
+                    break;
+                case 'monthly':
+                    date = getMonthStart(new Date());
+                    table = 'monthlyActivity';
+                    dateField = 'monthStart';
+                    break;
             }
 
             // Get all members with the role
             const members = role.members;
             if (!members.size) {
-                await message.reply('No members found with this role.');
+                const response = 'No members found with this role.';
+                if (isSlash) {
+                    await message.reply({ content: response, ephemeral: true });
+                } else {
+                    await message.reply(response);
+                }
                 return;
             }
 
@@ -103,7 +136,7 @@ module.exports = new Command({
             // Filter only inactive members and sort by activity percentage
             const inactiveMembers = memberActivities
                 .filter(m => !m.isActive)
-                .sort((a, b) => b.activeTime - a.activeTime); // Sort by active time descending
+                .sort((a, b) => b.activeTime - a.activeTime);
 
             // Create initial summary embed
             const summaryEmbed = new EmbedBuilder()
@@ -127,10 +160,18 @@ module.exports = new Command({
                 .setTimestamp();
 
             // Send summary embed
-            await message.reply({ embeds: [summaryEmbed] });
+            const initialResponse = await (isSlash ?
+                message.reply({ embeds: [summaryEmbed], fetchReply: true }) :
+                message.reply({ embeds: [summaryEmbed] })
+            );
 
             if (inactiveMembers.length === 0) {
-                await message.channel.send('✅ No inactive members found!');
+                const response = '✅ No inactive members found!';
+                if (isSlash) {
+                    await message.followUp({ content: response, ephemeral: true });
+                } else {
+                    await message.channel.send(response);
+                }
                 return;
             }
 
@@ -188,10 +229,16 @@ module.exports = new Command({
             };
 
             // Send initial page
-            const pageMessage = await message.channel.send({
-                embeds: [getPageEmbed(0)],
-                components: [getButtons(0)]
-            });
+            const pageMessage = await (isSlash ?
+                message.followUp({
+                    embeds: [getPageEmbed(0)],
+                    components: [getButtons(0)]
+                }) :
+                message.channel.send({
+                    embeds: [getPageEmbed(0)],
+                    components: [getButtons(0)]
+                })
+            );
 
             // Create button collector
             const collector = pageMessage.createMessageComponentCollector({
@@ -200,7 +247,7 @@ module.exports = new Command({
             });
 
             collector.on('collect', async (interaction) => {
-                if (interaction.user.id !== message.author.id) {
+                if (interaction.user.id !== (isSlash ? message.user.id : message.author.id)) {
                     await interaction.reply({ 
                         content: 'Only the command user can navigate pages.', 
                         ephemeral: true 
@@ -235,7 +282,16 @@ module.exports = new Command({
 
         } catch (error) {
             console.error('Role check error:', error);
-            await message.reply('Error checking role activity.');
+            const response = 'Error checking role activity.';
+            if (isSlash) {
+                if (!message.replied) {
+                    await message.reply({ content: response, ephemeral: true });
+                } else {
+                    await message.followUp({ content: response, ephemeral: true });
+                }
+            } else {
+                await message.reply(response);
+            }
         }
     }
 }); 

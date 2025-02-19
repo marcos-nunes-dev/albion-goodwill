@@ -1,6 +1,7 @@
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
 const { EmbedBuilder, Colors } = require('discord.js');
+const axios = require('axios');
 
 const command = new Command({
     name: 'competitors',
@@ -9,49 +10,58 @@ const command = new Command({
     usage: '<add|remove|list> [guild_id]',
     permissions: ['ADMINISTRATOR'],
     cooldown: 5,
-    async execute(message, args) {
-        if (!args[0]) {
-            await listCompetitors(message);
+    async execute(source, args) {
+        // Handle both message commands and slash commands
+        const isInteraction = source.commandName !== undefined;
+        
+        // Get action and guildId based on command type
+        let action, guildId;
+        if (isInteraction) {
+            action = source.options.getString('action');
+            guildId = source.options.getString('guild_id');
+        } else {
+            action = args[0]?.toLowerCase();
+            guildId = args[1];
+        }
+        
+        if (!action || action === 'list') {
+            await listCompetitors(source);
             return;
         }
 
-        switch (args[0].toLowerCase()) {
+        switch (action.toLowerCase()) {
             case 'add':
-                if (!args[1]) {
+                if (!guildId) {
                     const embed = new EmbedBuilder()
                         .setTitle('Missing Information')
                         .setDescription('Please provide the competitor guild ID.')
                         .addFields(
-                            { name: 'Usage', value: '```!albiongw competitors add <guild_id>```', inline: true },
-                            { name: 'Example', value: '```!albiongw competitors add 1234567890```', inline: true }
+                            { name: 'Usage', value: '```/competitors add <guild_id>```', inline: true },
+                            { name: 'Example', value: '```/competitors add 1234567890```', inline: true }
                         )
                         .setColor(Colors.Yellow)
                         .setTimestamp();
-                    await message.reply({ embeds: [embed] });
+                    await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
                     return;
                 }
-                await handleAddCompetitor(message, args[1]);
+                await handleAddCompetitor(source, guildId);
                 break;
 
             case 'remove':
-                if (!args[1]) {
+                if (!guildId) {
                     const embed = new EmbedBuilder()
                         .setTitle('Missing Information')
                         .setDescription('Please provide the competitor guild ID to remove.')
                         .addFields(
-                            { name: 'Usage', value: '```!albiongw competitors remove <guild_id>```', inline: true },
-                            { name: 'Example', value: '```!albiongw competitors remove 1234567890```', inline: true }
+                            { name: 'Usage', value: '```/competitors remove <guild_id>```', inline: true },
+                            { name: 'Example', value: '```/competitors remove 1234567890```', inline: true }
                         )
                         .setColor(Colors.Yellow)
                         .setTimestamp();
-                    await message.reply({ embeds: [embed] });
+                    await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
                     return;
                 }
-                await handleRemoveCompetitor(message, args[1]);
-                break;
-
-            case 'list':
-                await listCompetitors(message);
+                await handleRemoveCompetitor(source, guildId);
                 break;
 
             default:
@@ -72,48 +82,95 @@ const command = new Command({
                     )
                     .setColor(Colors.Yellow)
                     .setTimestamp()
-                    .setFooter({ text: 'Use !albiongw help competitors for more information' });
-                await message.reply({ embeds: [embed] });
+                    .setFooter({ text: 'Use /help competitors for more information' });
+                await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
         }
     }
 });
 
-async function handleAddCompetitor(message, competitorId) {
+async function handleAddCompetitor(source, competitorId) {
+    const isInteraction = source.commandName !== undefined;
     try {
-        const settings = await prisma.guildSettings.findUnique({
-            where: { guildId: message.guild.id }
-        });
-
-        if (settings.competitorIds.length >= 5) {
+        // First, verify if the guild exists by fetching from the API
+        let response;
+        try {
+            response = await axios.get(`https://api.albionbb.com/us/stats/guilds/${competitorId}?minPlayers=2`);
+        } catch (apiError) {
+            // Handle API errors specifically
+            if (apiError.response?.status === 404) {
+                const embed = new EmbedBuilder()
+                    .setTitle('Guild Not Found')
+                    .setDescription([
+                        '❌ This guild ID does not exist.',
+                        '',
+                        '**How to get the correct Guild ID:**',
+                        '1. Go to https://albionbb.com',
+                        '2. Search for your guild',
+                        '3. Copy the ID from the URL',
+                        '',
+                        '**Example:**',
+                        'For URL: `https://albionbb.com/guild/hZNTkb_CTcexTNajA0TOsw`',
+                        'The ID would be: `hZNTkb_CTcexTNajA0TOsw`'
+                    ].join('\n'))
+                    .setColor(Colors.Red)
+                    .setTimestamp();
+                await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
+                return;
+            }
+            
+            // Handle other API errors
             const embed = new EmbedBuilder()
-                .setTitle('Maximum Limit Reached')
-                .setDescription('You cannot add more than 5 competitor guilds.')
-                .addFields({
-                    name: 'What to do?',
-                    value: 'Remove an existing competitor guild before adding a new one.'
-                })
+                .setTitle('API Error')
+                .setDescription('Failed to connect to Albion API. Please try again later.')
                 .setColor(Colors.Red)
                 .setTimestamp();
-            await message.reply({ embeds: [embed] });
+            await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
             return;
         }
+
+        const guildData = response.data;
+
+        if (!Array.isArray(guildData) || guildData.length === 0) {
+            const embed = new EmbedBuilder()
+                .setTitle('Invalid Guild')
+                .setDescription('This guild exists but has no recent battle data.')
+                .setColor(Colors.Yellow)
+                .setTimestamp();
+            await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
+            return;
+        }
+
+        const guildName = guildData[0].guildName;
+        const allianceName = guildData[0].allianceName;
+
+        // Get current settings
+        const settings = await prisma.guildSettings.findUnique({
+            where: { guildId: isInteraction ? source.guildId : source.guild.id }
+        });
 
         if (settings.competitorIds.includes(competitorId)) {
             const embed = new EmbedBuilder()
-                .setTitle('Duplicate Entry')
-                .setDescription('This guild is already in your competitors list.')
-                .addFields({
-                    name: 'Guild ID',
-                    value: `\`${competitorId}\``
-                })
+                .setTitle('Already Tracking')
+                .setDescription(`The guild "${guildName}" is already being tracked.`)
                 .setColor(Colors.Yellow)
                 .setTimestamp();
-            await message.reply({ embeds: [embed] });
+            await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
             return;
         }
 
+        if (settings.competitorIds.length >= 5) {
+            const embed = new EmbedBuilder()
+                .setTitle('Limit Reached')
+                .setDescription('You can only track up to 5 competitor guilds.')
+                .setColor(Colors.Red)
+                .setTimestamp();
+            await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
+            return;
+        }
+
+        // Add the competitor
         await prisma.guildSettings.update({
-            where: { guildId: message.guild.id },
+            where: { guildId: isInteraction ? source.guildId : source.guild.id },
             data: {
                 competitorIds: {
                     push: competitorId
@@ -123,14 +180,11 @@ async function handleAddCompetitor(message, competitorId) {
 
         const embed = new EmbedBuilder()
             .setTitle('Competitor Added')
-            .setDescription('Successfully added the competitor guild to your tracking list.')
-            .addFields(
-                { name: 'Guild ID', value: `\`${competitorId}\``, inline: true },
-                { name: 'Total Competitors', value: `${settings.competitorIds.length + 1}/5`, inline: true }
-            )
+            .setDescription(`Successfully added "${guildName}" ${allianceName ? `[${allianceName}]` : ''} to competitor tracking.`)
             .setColor(Colors.Green)
             .setTimestamp();
-        await message.reply({ embeds: [embed] });
+        await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
+
     } catch (error) {
         console.error('Error adding competitor:', error);
         const embed = new EmbedBuilder()
@@ -138,14 +192,15 @@ async function handleAddCompetitor(message, competitorId) {
             .setDescription('An error occurred while adding the competitor guild.')
             .setColor(Colors.Red)
             .setTimestamp();
-        await message.reply({ embeds: [embed] });
+        await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
     }
 }
 
-async function handleRemoveCompetitor(message, competitorId) {
+async function handleRemoveCompetitor(source, competitorId) {
+    const isInteraction = source.commandName !== undefined;
     try {
         const settings = await prisma.guildSettings.findUnique({
-            where: { guildId: message.guild.id }
+            where: { guildId: isInteraction ? source.guildId : source.guild.id }
         });
 
         if (!settings.competitorIds.includes(competitorId)) {
@@ -158,12 +213,12 @@ async function handleRemoveCompetitor(message, competitorId) {
                 })
                 .setColor(Colors.Yellow)
                 .setTimestamp();
-            await message.reply({ embeds: [embed] });
+            await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
             return;
         }
 
         await prisma.guildSettings.update({
-            where: { guildId: message.guild.id },
+            where: { guildId: isInteraction ? source.guildId : source.guild.id },
             data: {
                 competitorIds: {
                     set: settings.competitorIds.filter(id => id !== competitorId)
@@ -180,7 +235,7 @@ async function handleRemoveCompetitor(message, competitorId) {
             )
             .setColor(Colors.Green)
             .setTimestamp();
-        await message.reply({ embeds: [embed] });
+        await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
     } catch (error) {
         console.error('Error removing competitor:', error);
         const embed = new EmbedBuilder()
@@ -188,14 +243,15 @@ async function handleRemoveCompetitor(message, competitorId) {
             .setDescription('An error occurred while removing the competitor guild.')
             .setColor(Colors.Red)
             .setTimestamp();
-        await message.reply({ embeds: [embed] });
+        await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
     }
 }
 
-async function listCompetitors(message) {
+async function listCompetitors(source) {
+    const isInteraction = source.commandName !== undefined;
     try {
         const settings = await prisma.guildSettings.findUnique({
-            where: { guildId: message.guild.id }
+            where: { guildId: isInteraction ? source.guildId : source.guild.id }
         });
 
         if (!settings.competitorIds.length) {
@@ -204,11 +260,11 @@ async function listCompetitors(message) {
                 .setDescription('No competitor guilds are currently configured.')
                 .addFields({
                     name: 'How to Add',
-                    value: 'Use `!albiongw competitors add <guild_id>` to start tracking competitor guilds.'
+                    value: 'Use `/competitors add <guild_id>` to start tracking competitor guilds.'
                 })
                 .setColor(Colors.Blue)
                 .setTimestamp();
-            await message.reply({ embeds: [embed] });
+            await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
             return;
         }
 
@@ -225,7 +281,7 @@ async function listCompetitors(message) {
             .setFooter({ text: `Total Competitors: ${settings.competitorIds.length}/5` })
             .setTimestamp();
 
-        await message.reply({ embeds: [embed] });
+        await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
     } catch (error) {
         console.error('Error listing competitors:', error);
         const embed = new EmbedBuilder()
@@ -233,7 +289,7 @@ async function listCompetitors(message) {
             .setDescription('An error occurred while fetching the competitor guilds list.')
             .setColor(Colors.Red)
             .setTimestamp();
-        await message.reply({ embeds: [embed] });
+        await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
     }
 }
 

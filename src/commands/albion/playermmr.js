@@ -18,34 +18,53 @@ module.exports = new Command({
     category: 'albion',
     usage: '<player_name>',
     cooldown: 10,
-    async execute(message, args) {
-        if (!args[0]) {
-            await message.reply({
-                embeds: [
-                    new EmbedBuilder()
-                        .setTitle('Missing Information')
-                        .setDescription('Please provide a player name.')
-                        .addFields(
-                            { name: 'Usage', value: '```!albiongw playermmr <player_name>```', inline: true },
-                            { name: 'Example', value: '```!albiongw playermmr PlayerName```', inline: true }
-                        )
-                        .setColor(Colors.Yellow)
-                        .setTimestamp()
-                ]
-            });
+    async execute(message, args, handler) {
+        // Handle both slash commands and prefix commands
+        const isSlash = message.commandName === 'playermmr';
+        const playerName = isSlash ? 
+            message.options.getString('player') : 
+            args[0];
+
+        if (!playerName) {
+            const errorEmbed = new EmbedBuilder()
+                .setTitle('Missing Information')
+                .setDescription('Please provide a player name.')
+                .addFields(
+                    { name: 'Usage', value: '```!albiongw playermmr <player_name>```', inline: true },
+                    { name: 'Example', value: '```!albiongw playermmr PlayerName```', inline: true }
+                )
+                .setColor(Colors.Yellow)
+                .setTimestamp();
+
+            if (isSlash) {
+                await message.reply({ embeds: [errorEmbed], ephemeral: true });
+            } else {
+                await message.reply({ embeds: [errorEmbed] });
+            }
             return;
         }
 
-        const playerName = args[0];
-        const initialResponse = await message.reply({
-            embeds: [
-                new EmbedBuilder()
-                    .setTitle('Fetching Data')
-                    .setDescription('Retrieving player statistics...')
-                    .setColor(Colors.Blue)
-                    .setTimestamp()
-            ]
-        });
+        const initialResponse = await (isSlash ? 
+            message.reply({
+                embeds: [
+                    new EmbedBuilder()
+                        .setTitle('Fetching Data')
+                        .setDescription('Retrieving player statistics...')
+                        .setColor(Colors.Blue)
+                        .setTimestamp()
+                ],
+                fetchReply: true
+            }) : 
+            message.reply({
+                embeds: [
+                    new EmbedBuilder()
+                        .setTitle('Fetching Data')
+                        .setDescription('Retrieving player statistics...')
+                        .setColor(Colors.Blue)
+                        .setTimestamp()
+                ]
+            })
+        );
 
         try {
             const settings = await prisma.guildSettings.findUnique({
@@ -232,19 +251,26 @@ module.exports = new Command({
                 })
                 .setTimestamp();
 
-            await initialResponse.edit({ embeds: [embed] });
+            // Update how we edit the response based on command type
+            if (isSlash) {
+                await message.editReply({ embeds: [embed] });
+            } else {
+                await initialResponse.edit({ embeds: [embed] });
+            }
 
         } catch (error) {
             console.error('Error fetching player MMR:', error);
-            await initialResponse.edit({
-                embeds: [
-                    new EmbedBuilder()
-                        .setTitle('Error')
-                        .setDescription('An error occurred while fetching player statistics.')
-                        .setColor(Colors.Red)
-                        .setTimestamp()
-                ]
-            });
+            const errorEmbed = new EmbedBuilder()
+                .setTitle('Error')
+                .setDescription('An error occurred while fetching player statistics.')
+                .setColor(Colors.Red)
+                .setTimestamp();
+
+            if (isSlash) {
+                await message.editReply({ embeds: [errorEmbed] });
+            } else {
+                await initialResponse.edit({ embeds: [errorEmbed] });
+            }
         }
     }
 }); 

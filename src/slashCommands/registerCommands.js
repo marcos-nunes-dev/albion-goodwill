@@ -26,7 +26,7 @@ const commands = [
         )
         .addStringOption(option =>
             option.setName('period')
-                .setDescription('Time period to check (daily, weekly, monthly)')
+                .setDescription('Time period to check')
                 .setRequired(false)
                 .addChoices(
                     { name: 'Daily', value: 'daily' },
@@ -36,7 +36,22 @@ const commands = [
         ),
     new SlashCommandBuilder()
         .setName('competitors')
-        .setDescription('Manage competitor settings'),
+        .setDescription('Manage competitors in the tournament')
+        .addStringOption(option =>
+            option.setName('action')
+                .setDescription('Action to perform (add/remove/list)')
+                .setRequired(true)
+                .addChoices(
+                    { name: 'add', value: 'add' },
+                    { name: 'remove', value: 'remove' },
+                    { name: 'list', value: 'list' }
+                )
+        )
+        .addStringOption(option =>
+            option.setName('guild_id')
+                .setDescription('Competitor guild id')
+                .setRequired(false)
+        ),
     new SlashCommandBuilder()
         .setName('checkregistrations')
         .setDescription('Check unregistered members in a role')
