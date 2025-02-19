@@ -1,51 +1,82 @@
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
-const EmbedBuilder = require('../../utils/embedBuilder');
-const { Colors } = require('discord.js');
+const { EmbedBuilder, Colors } = require('discord.js');
 
 module.exports = new Command({
     name: 'unregister',
-    description: 'Remove a player registration',
+    description: 'Unregister a member from Albion Online verification',
     category: 'admin',
     usage: '<player_name>',
     permissions: ['ADMINISTRATOR'],
     cooldown: 5,
-    async execute(message, args) {
-        if (!args[0]) {
-            await message.reply({
-                embeds: [EmbedBuilder.warning('Please provide a player name to unregister.')]
-            });
-            return;
-        }
-
-        const playerName = args[0];
-
+    async execute(message, args, handler) {
         try {
+            const isSlash = message.commandName === 'unregister';
+            const targetUser = isSlash ? 
+                message.options.getUser('user') : 
+                message.mentions.users.first();
+
+            if (!targetUser) {
+                const errorEmbed = new EmbedBuilder()
+                    .setTitle('⚠️ Missing Information')
+                    .setDescription('Please mention the user to unregister.')
+                    .addFields([
+                        {
+                            name: 'Usage',
+                            value: isSlash ? 
+                                '`/unregister user:@User`' : 
+                                '`!albiongw unregister @User`'
+                        },
+                        {
+                            name: 'Example',
+                            value: isSlash ? 
+                                '`/unregister user:@John`' : 
+                                '`!albiongw unregister @John`'
+                        }
+                    ])
+                    .setColor(Colors.Yellow)
+                    .setTimestamp();
+
+                await message.reply({
+                    embeds: [errorEmbed],
+                    ephemeral: isSlash
+                });
+                return;
+            }
+
             // Find registration
-            const registration = await prisma.playerRegistration.findUnique({
+            const registration = await prisma.playerRegistration.findFirst({
                 where: {
-                    playerName: playerName
+                    userId: targetUser.id,
+                    guildId: message.guildId
                 }
             });
 
             if (!registration) {
+                const notFoundEmbed = new EmbedBuilder()
+                    .setTitle('❌ Not Found')
+                    .setDescription(`User ${targetUser.toString()} is not registered.`)
+                    .setColor(Colors.Red)
+                    .setTimestamp();
+
                 await message.reply({
-                    embeds: [EmbedBuilder.warning(`Player "${playerName}" is not registered.`)]
+                    embeds: [notFoundEmbed],
+                    ephemeral: isSlash
                 });
                 return;
             }
 
             // Get guild settings to check for verified role
             const settings = await prisma.guildSettings.findUnique({
-                where: { guildId: message.guild.id }
+                where: { guildId: message.guildId }
             });
 
-            let roleRemoved = false;
             // Try to remove verified role if configured
+            let roleRemoved = false;
             if (settings?.nicknameVerifiedId) {
                 try {
-                    const member = await message.guild.members.fetch(registration.userId);
-                    if (member) {
+                    const member = await message.guild.members.fetch(targetUser.id);
+                    if (member && member.roles.cache.has(settings.nicknameVerifiedId)) {
                         await member.roles.remove(settings.nicknameVerifiedId);
                         roleRemoved = true;
                     }
@@ -57,59 +88,57 @@ module.exports = new Command({
             // Delete registration
             await prisma.playerRegistration.delete({
                 where: {
-                    playerName: playerName
+                    id: registration.id
                 }
             });
 
-            await message.reply({
-                embeds: [
+            const successEmbed = new EmbedBuilder()
+                .setTitle('✅ Registration Removed')
+                .setDescription('User has been unregistered successfully.')
+                .addFields([
                     {
-                        title: '✅ Unregistration Successful',
-                        description: 'The player registration has been removed successfully.',
-                        fields: [
-                            {
-                                name: 'Character Name',
-                                value: `\`${playerName}\``,
-                                inline: true
-                            },
-                            {
-                                name: 'Discord User',
-                                value: `<@${registration.userId}>`,
-                                inline: true
-                            },
-                            {
-                                name: 'Status',
-                                value: settings?.nicknameVerifiedId 
-                                    ? roleRemoved 
-                                        ? '🎭 Verified role removed'
-                                        : '⚠️ Could not remove verified role'
-                                    : '📝 No role configuration',
-                                inline: true
-                            }
-                        ],
-                        color: Colors.Green,
-                        timestamp: new Date().toISOString(),
-                        footer: {
-                            text: `Unregistered by ${message.author.tag}`
-                        }
+                        name: 'User',
+                        value: targetUser.toString(),
+                        inline: true
+                    },
+                    {
+                        name: 'Player Name',
+                        value: `\`${registration.playerName}\``,
+                        inline: true
+                    },
+                    {
+                        name: 'Status',
+                        value: roleRemoved ? 
+                            '✅ Verified role removed' : 
+                            '⚠️ Could not remove verified role',
+                        inline: false
                     }
-                ]
+                ])
+                .setColor(Colors.Green)
+                .setTimestamp()
+                .setFooter({
+                    text: `Unregistered by ${isSlash ? message.user.tag : message.author.tag}`
+                });
+
+            await message.reply({
+                embeds: [successEmbed],
+                ephemeral: isSlash
             });
 
         } catch (error) {
-            console.error('Error unregistering player:', error);
+            console.error('Error unregistering user:', error);
+            const errorEmbed = new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription('An error occurred while trying to unregister the user.')
+                .setColor(Colors.Red)
+                .setTimestamp()
+                .setFooter({
+                    text: `Attempted by ${isSlash ? message.user.tag : message.author.tag}`
+                });
+
             await message.reply({
-                embeds: [
-                    {
-                        title: '❌ Unregistration Failed',
-                        description: 'An error occurred while trying to unregister the player.',
-                        color: Colors.Red,
-                        timestamp: new Date().toISOString(),
-                        footer: {
-                            text: `Attempted by ${message.author.tag}`
-                        }
-                    }
-                ]
+                embeds: [errorEmbed],
+                ephemeral: isSlash
             });
         }
     }

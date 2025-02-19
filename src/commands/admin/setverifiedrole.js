@@ -1,6 +1,6 @@
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
-const { Colors } = require('discord.js');
+const { EmbedBuilder, Colors } = require('discord.js');
 
 module.exports = new Command({
     name: 'setverifiedrole',
@@ -9,90 +9,95 @@ module.exports = new Command({
     usage: '@role',
     permissions: ['ADMINISTRATOR'],
     cooldown: 5,
-    async execute(message, args) {
-        const role = message.mentions.roles.first();
-
-        if (!role) {
-            await message.reply({
-                embeds: [
-                    {
-                        title: '⚠️ Missing Information',
-                        description: 'Please mention the Discord role to be used for verified players.',
-                        fields: [
-                            {
-                                name: 'Usage',
-                                value: '`!albiongw setverifiedrole @role`',
-                                inline: true
-                            },
-                            {
-                                name: 'Example',
-                                value: '`!albiongw setverifiedrole @Verified`',
-                                inline: true
-                            }
-                        ],
-                        color: Colors.Yellow,
-                        timestamp: new Date().toISOString()
-                    }
-                ]
-            });
-            return;
-        }
-
+    async execute(message, args, handler) {
         try {
+            const isSlash = message.commandName === 'setverifiedrole';
+            const role = isSlash ? 
+                message.options.getRole('role') : 
+                message.mentions.roles.first();
+
+            if (!role) {
+                const errorEmbed = new EmbedBuilder()
+                    .setTitle('⚠️ Missing Information')
+                    .setDescription('Please mention the Discord role to be used for verified players.')
+                    .addFields([
+                        {
+                            name: 'Usage',
+                            value: isSlash ? 
+                                '`/setverifiedrole role:@role`' : 
+                                '`!albiongw setverifiedrole @role`'
+                        },
+                        {
+                            name: 'Example',
+                            value: isSlash ? 
+                                '`/setverifiedrole role:@Verified`' : 
+                                '`!albiongw setverifiedrole @Verified`'
+                        }
+                    ])
+                    .setColor(Colors.Yellow)
+                    .setTimestamp();
+
+                await message.reply({
+                    embeds: [errorEmbed],
+                    ephemeral: isSlash
+                });
+                return;
+            }
+
             await prisma.guildSettings.upsert({
                 where: { 
-                    guildId: message.guild.id 
+                    guildId: message.guildId 
                 },
                 update: { 
                     nicknameVerifiedId: role.id,
                     guildName: message.guild.name
                 },
                 create: {
-                    guildId: message.guild.id,
+                    guildId: message.guildId,
                     nicknameVerifiedId: role.id,
                     guildName: message.guild.name
                 }
             });
 
-            await message.reply({
-                embeds: [
+            const successEmbed = new EmbedBuilder()
+                .setTitle('✅ Verified Role Updated')
+                .setDescription('The verified role has been successfully updated.')
+                .addFields([
                     {
-                        title: '✅ Verified Role Updated',
-                        description: 'The verified role has been successfully updated.',
-                        fields: [
-                            {
-                                name: 'New Verified Role',
-                                value: `<@&${role.id}>`,
-                                inline: true
-                            },
-                            {
-                                name: 'Role Name',
-                                value: `\`${role.name}\``,
-                                inline: true
-                            }
-                        ],
-                        color: Colors.Green,
-                        timestamp: new Date().toISOString(),
-                        footer: {
-                            text: `Updated by ${message.author.tag}`
-                        }
+                        name: 'New Verified Role',
+                        value: `<@&${role.id}>`,
+                        inline: true
+                    },
+                    {
+                        name: 'Role Name',
+                        value: `\`${role.name}\``,
+                        inline: true
                     }
-                ]
+                ])
+                .setColor(Colors.Green)
+                .setTimestamp()
+                .setFooter({
+                    text: `Updated by ${isSlash ? message.user.tag : message.author.tag}`
+                });
+
+            await message.reply({
+                embeds: [successEmbed],
+                ephemeral: isSlash
             });
         } catch (error) {
             console.error('Error setting verified role:', error);
+            const errorEmbed = new EmbedBuilder()
+                .setTitle('❌ Update Failed')
+                .setDescription('An error occurred while trying to update the verified role.')
+                .setColor(Colors.Red)
+                .setTimestamp()
+                .setFooter({
+                    text: `Attempted by ${isSlash ? message.user.tag : message.author.tag}`
+                });
+
             await message.reply({
-                embeds: [
-                    {
-                        title: '❌ Update Failed',
-                        description: 'An error occurred while trying to update the verified role.',
-                        color: Colors.Red,
-                        timestamp: new Date().toISOString(),
-                        footer: {
-                            text: `Attempted by ${message.author.tag}`
-                        }
-                    }
-                ]
+                embeds: [errorEmbed],
+                ephemeral: isSlash
             });
         }
     }

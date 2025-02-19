@@ -1,6 +1,6 @@
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
-const { Colors } = require('discord.js');
+const { EmbedBuilder, Colors } = require('discord.js');
 const { fetchGuildStats, getMainRole } = require('../../utils/albionApi');
 
 module.exports = new Command({
@@ -11,66 +11,71 @@ module.exports = new Command({
     permissions: ['ADMINISTRATOR'],
     cooldown: 10,
     async execute(message, args, handler) {
-        // Check if a role was mentioned
-        const role = message.mentions.roles.first();
-        if (!role) {
-            await message.reply({
-                embeds: [
-                    {
-                        title: '⚠️ Missing Information',
-                        description: 'Please mention the role to update members from.',
-                        fields: [
-                            {
-                                name: 'Usage',
-                                value: '`!albiongw updatemembersrole @role`',
-                                inline: true
-                            },
-                            {
-                                name: 'Example',
-                                value: '`!albiongw updatemembersrole @Members`',
-                                inline: true
-                            }
-                        ],
-                        color: Colors.Yellow,
-                        timestamp: new Date().toISOString()
-                    }
-                ]
-            });
-            return;
-        }
-
         try {
+            const isSlash = message.commandName === 'updatemembersrole';
+            const role = isSlash ? 
+                message.options.getRole('role') : 
+                message.mentions.roles.first();
+
+            if (!role) {
+                const errorEmbed = new EmbedBuilder()
+                    .setTitle('⚠️ Missing Information')
+                    .setDescription('Please mention the role to update members from.')
+                    .addFields([
+                        {
+                            name: 'Usage',
+                            value: isSlash ? 
+                                '`/updatemembersrole role:@role`' : 
+                                '`!albiongw updatemembersrole @role`'
+                        },
+                        {
+                            name: 'Example',
+                            value: isSlash ? 
+                                '`/updatemembersrole role:@Members`' : 
+                                '`!albiongw updatemembersrole @Members`'
+                        }
+                    ])
+                    .setColor(Colors.Yellow)
+                    .setTimestamp();
+
+                await message.reply({
+                    embeds: [errorEmbed],
+                    ephemeral: isSlash
+                });
+                return;
+            }
+
             // Get guild settings
             const settings = await prisma.guildSettings.findUnique({
-                where: { guildId: message.guild.id }
+                where: { guildId: message.guildId }
             });
 
             // Check if guild has Albion guild ID configured
             if (!settings?.albionGuildId) {
+                const noGuildEmbed = new EmbedBuilder()
+                    .setTitle('❌ Missing Configuration')
+                    .setDescription('Albion guild ID not configured. Use `/setguildid` first.')
+                    .setColor(Colors.Red)
+                    .setTimestamp();
+
                 await message.reply({
-                    embeds: [
-                        {
-                            title: '❌ Missing Configuration',
-                            description: 'Albion guild ID not configured. Use `/settings setguildid` first.',
-                            color: Colors.Red,
-                            timestamp: new Date().toISOString()
-                        }
-                    ]
+                    embeds: [noGuildEmbed],
+                    ephemeral: isSlash
                 });
                 return;
             }
 
             // Check if verified role is configured
             if (!settings?.nicknameVerifiedId) {
+                const noVerifiedEmbed = new EmbedBuilder()
+                    .setTitle('❌ Missing Configuration')
+                    .setDescription('Verified role not configured. Use `/setverifiedrole` first.')
+                    .setColor(Colors.Red)
+                    .setTimestamp();
+
                 await message.reply({
-                    embeds: [
-                        {
-                            title: '❌ Missing Configuration',
-                            description: 'Verified role not configured. Use `/settings setverifiedrole` first.',
-                            color: Colors.Red,
-                            timestamp: new Date().toISOString()
-                        }
-                    ]
+                    embeds: [noVerifiedEmbed],
+                    ephemeral: isSlash
                 });
                 return;
             }
@@ -90,50 +95,48 @@ module.exports = new Command({
                 .map(([role]) => role);
 
             if (missingRoles.length > 0) {
-                await message.reply({
-                    embeds: [
+                const missingRolesEmbed = new EmbedBuilder()
+                    .setTitle('❌ Missing Role Configuration')
+                    .setDescription('The following roles need to be configured first using `/setrole`:')
+                    .addFields([
                         {
-                            title: '❌ Missing Role Configuration',
-                            description: 'The following roles need to be configured first using `/settings setrole`:',
-                            fields: [
-                                {
-                                    name: 'Missing Roles',
-                                    value: missingRoles.join('\n'),
-                                    inline: false
-                                }
-                            ],
-                            color: Colors.Red,
-                            timestamp: new Date().toISOString()
+                            name: 'Missing Roles',
+                            value: missingRoles.join('\n')
                         }
-                    ]
+                    ])
+                    .setColor(Colors.Red)
+                    .setTimestamp();
+
+                await message.reply({
+                    embeds: [missingRolesEmbed],
+                    ephemeral: isSlash
                 });
                 return;
             }
 
             // Initial response
+            const loadingEmbed = new EmbedBuilder()
+                .setTitle('⏳ Updating Member Roles')
+                .setDescription('Fetching guild data and updating roles...')
+                .setColor(Colors.Blue)
+                .setTimestamp();
+
             const initialResponse = await message.reply({
-                embeds: [
-                    {
-                        title: '⏳ Updating Member Roles',
-                        description: 'Fetching guild data and updating roles...',
-                        color: Colors.Blue,
-                        timestamp: new Date().toISOString()
-                    }
-                ]
+                embeds: [loadingEmbed],
+                fetchReply: true
             });
 
             // Fetch guild stats from Albion API
             const guildStats = await fetchGuildStats(settings.albionGuildId);
             if (!guildStats || !guildStats.length) {
+                const noDataEmbed = new EmbedBuilder()
+                    .setTitle('❌ Error')
+                    .setDescription('Failed to fetch guild data. Your guild ID may be incorrect.')
+                    .setColor(Colors.Red)
+                    .setTimestamp();
+
                 await initialResponse.edit({
-                    embeds: [
-                        {
-                            title: '❌ Error',
-                            description: 'Failed to fetch guild data. Your guild ID may be incorrect.',
-                            color: Colors.Red,
-                            timestamp: new Date().toISOString()
-                        }
-                    ]
+                    embeds: [noDataEmbed]
                 });
                 return;
             }
@@ -159,7 +162,8 @@ module.exports = new Command({
                 // Get player registration
                 const registration = await prisma.playerRegistration.findFirst({
                     where: {
-                        userId: memberId
+                        userId: memberId,
+                        guildId: message.guildId
                     }
                 });
 
@@ -201,55 +205,61 @@ module.exports = new Command({
             }
 
             // Final response
-            await initialResponse.edit({
-                embeds: [
+            const resultEmbed = new EmbedBuilder()
+                .setTitle('✅ Role Update Complete')
+                .setDescription('Member roles have been updated based on their main class.')
+                .addFields([
                     {
-                        title: '✅ Role Update Complete',
-                        description: 'Member roles have been updated based on their main class.',
-                        fields: [
-                            {
-                                name: '📊 Results',
-                                value: [
-                                    `Updated: ${updated}`,
-                                    `Not Verified: ${notVerified}`,
-                                    `Not Found: ${notFound}`
-                                ].join('\n'),
-                                inline: false
-                            },
-                            notVerifiedMembers.length > 0 ? {
-                                name: '❌ Not Verified Members',
-                                value: notVerifiedMembers.join(', '),
-                                inline: false
-                            } : null,
-                            notFoundMembers.length > 0 ? {
-                                name: '❓ Members Not Found in Guild',
-                                value: notFoundMembers.join(', '),
-                                inline: false
-                            } : null
-                        ].filter(Boolean),
-                        color: Colors.Green,
-                        timestamp: new Date().toISOString(),
-                        footer: {
-                            text: `Updated by ${message.author.tag}`
-                        }
-                    }
-                ]
+                        name: '📊 Results',
+                        value: [
+                            `Updated: ${updated}`,
+                            `Not Verified: ${notVerified}`,
+                            `Not Found: ${notFound}`
+                        ].join('\n'),
+                        inline: false
+                    },
+                    notVerifiedMembers.length > 0 ? {
+                        name: '❌ Not Verified Members',
+                        value: notVerifiedMembers.join(', '),
+                        inline: false
+                    } : null,
+                    notFoundMembers.length > 0 ? {
+                        name: '❓ Members Not Found in Guild',
+                        value: notFoundMembers.join(', '),
+                        inline: false
+                    } : null
+                ].filter(Boolean))
+                .setColor(Colors.Green)
+                .setTimestamp()
+                .setFooter({
+                    text: `Updated by ${isSlash ? message.user.tag : message.author.tag}`
+                });
+
+            await initialResponse.edit({
+                embeds: [resultEmbed]
             });
+
         } catch (error) {
             console.error('Error updating member roles:', error);
-            await message.reply({
-                embeds: [
-                    {
-                        title: '❌ Update Failed',
-                        description: 'An error occurred while trying to update member roles.',
-                        color: Colors.Red,
-                        timestamp: new Date().toISOString(),
-                        footer: {
-                            text: `Attempted by ${message.author.tag}`
-                        }
-                    }
-                ]
-            });
+            const errorEmbed = new EmbedBuilder()
+                .setTitle('❌ Update Failed')
+                .setDescription('An error occurred while trying to update member roles.')
+                .setColor(Colors.Red)
+                .setTimestamp()
+                .setFooter({
+                    text: `Attempted by ${isSlash ? message.user.tag : message.author.tag}`
+                });
+
+            if (message.replied) {
+                await message.editReply({
+                    embeds: [errorEmbed]
+                });
+            } else {
+                await message.reply({
+                    embeds: [errorEmbed],
+                    ephemeral: isSlash
+                });
+            }
         }
     }
 }); 

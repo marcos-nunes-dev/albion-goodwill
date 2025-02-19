@@ -65,7 +65,7 @@ const commands = [
         .setDescription('Update roles of members based on their main class in Albion Online')
         .addRoleOption(option =>
             option.setName('role')
-                .setDescription('The role to update members from')
+                .setDescription('The role containing members to update')
                 .setRequired(true)
         ),
     new SlashCommandBuilder()
@@ -73,26 +73,39 @@ const commands = [
         .setDescription('Set the bot command prefix')
         .addStringOption(option =>
             option.setName('prefix')
-                .setDescription('The new prefix')
+                .setDescription('The new command prefix (must start with: ! $ % & * # @ ? .)')
                 .setRequired(true)
         ),
     new SlashCommandBuilder()
         .setName('settings')
-        .setDescription('View or modify bot settings'),
+        .setDescription('View current guild settings'),
     new SlashCommandBuilder()
         .setName('setverifiedrole')
-        .setDescription('Set the verified role')
+        .setDescription('Set the role for verified Albion Online players')
         .addRoleOption(option =>
             option.setName('role')
-                .setDescription('The role to set as verified')
+                .setDescription('The Discord role to assign to verified players')
                 .setRequired(true)
         ),
     new SlashCommandBuilder()
         .setName('setrole')
-        .setDescription('Set a role configuration')
+        .setDescription('Set a role for a specific Albion Online class')
+        .addStringOption(option =>
+            option.setName('type')
+                .setDescription('The role type to set')
+                .setRequired(true)
+                .addChoices(
+                    { name: 'Tank', value: 'tank' },
+                    { name: 'Support', value: 'support' },
+                    { name: 'Healer', value: 'healer' },
+                    { name: 'Melee DPS', value: 'melee' },
+                    { name: 'Ranged DPS', value: 'ranged' },
+                    { name: 'Battlemount', value: 'mount' }
+                )
+        )
         .addRoleOption(option =>
             option.setName('role')
-                .setDescription('The role to configure')
+                .setDescription('The Discord role to assign')
                 .setRequired(true)
         ),
     new SlashCommandBuilder()
@@ -100,7 +113,7 @@ const commands = [
         .setDescription('Set the Albion guild name')
         .addStringOption(option =>
             option.setName('name')
-                .setDescription('The guild name')
+                .setDescription('The Albion guild name to set')
                 .setRequired(true)
         ),
     new SlashCommandBuilder()
@@ -108,15 +121,15 @@ const commands = [
         .setDescription('Set the Albion guild ID')
         .addStringOption(option =>
             option.setName('id')
-                .setDescription('The guild ID')
+                .setDescription('The Albion guild ID to set')
                 .setRequired(true)
         ),
     new SlashCommandBuilder()
         .setName('unregister')
-        .setDescription('Unregister a member')
+        .setDescription('Unregister a member from Albion Online verification')
         .addUserOption(option =>
             option.setName('user')
-                .setDescription('The user to unregister')
+                .setDescription('The Discord user to unregister')
                 .setRequired(true)
         ),
     new SlashCommandBuilder()
@@ -209,13 +222,28 @@ const commands = [
         .setDescription('Display presence leaderboard'),
     new SlashCommandBuilder()
         .setName('presenceweekly')
-        .setDescription('Display weekly presence stats'),
+        .setDescription('Display weekly presence stats')
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('The user to check stats for (defaults to you)')
+                .setRequired(false)
+        ),
     new SlashCommandBuilder()
         .setName('presencemonthly')
-        .setDescription('Display monthly presence stats'),
+        .setDescription('Display monthly presence stats')
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('The user to check stats for (defaults to you)')
+                .setRequired(false)
+        ),
     new SlashCommandBuilder()
         .setName('presencedaily')
         .setDescription('Display daily presence stats')
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('The user to check stats for (defaults to you)')
+                .setRequired(false)
+        ),
 ];
 
 async function registerSlashCommands(client) {

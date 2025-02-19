@@ -1,6 +1,6 @@
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
-const { Colors } = require('discord.js');
+const { EmbedBuilder, Colors } = require('discord.js');
 
 module.exports = new Command({
     name: 'setguildname',
@@ -9,83 +9,88 @@ module.exports = new Command({
     usage: '<guild_name>',
     permissions: ['ADMINISTRATOR'],
     cooldown: 5,
-    async execute(message, args) {
-        if (!args[0]) {
-            await message.reply({
-                embeds: [
-                    {
-                        title: '⚠️ Missing Information',
-                        description: 'Please provide the Albion guild name.',
-                        fields: [
-                            {
-                                name: 'Usage',
-                                value: '`!albiongw setguildname <guild_name>`',
-                                inline: true
-                            },
-                            {
-                                name: 'Example',
-                                value: '`!albiongw setguildname MyGuild`',
-                                inline: true
-                            }
-                        ],
-                        color: Colors.Yellow,
-                        timestamp: new Date().toISOString()
-                    }
-                ]
-            });
-            return;
-        }
-
-        const guildName = args.join(' ');
-
+    async execute(message, args, handler) {
         try {
+            const isSlash = message.commandName === 'setguildname';
+            const guildName = isSlash ? 
+                message.options.getString('name') : 
+                args.join(' ');
+
+            if (!guildName) {
+                const errorEmbed = new EmbedBuilder()
+                    .setTitle('⚠️ Missing Information')
+                    .setDescription('Please provide the Albion guild name.')
+                    .addFields([
+                        {
+                            name: 'Usage',
+                            value: isSlash ? 
+                                '`/setguildname name:<guild_name>`' : 
+                                '`!albiongw setguildname <guild_name>`'
+                        },
+                        {
+                            name: 'Example',
+                            value: isSlash ? 
+                                '`/setguildname name:MyGuild`' : 
+                                '`!albiongw setguildname MyGuild`'
+                        }
+                    ])
+                    .setColor(Colors.Yellow)
+                    .setTimestamp();
+
+                await message.reply({
+                    embeds: [errorEmbed],
+                    ephemeral: isSlash
+                });
+                return;
+            }
+
             await prisma.guildSettings.upsert({
                 where: { 
-                    guildId: message.guild.id 
+                    guildId: message.guildId 
                 },
                 update: { 
                     guildName: guildName 
                 },
                 create: {
-                    guildId: message.guild.id,
+                    guildId: message.guildId,
                     guildName: guildName
                 }
             });
 
-            await message.reply({
-                embeds: [
+            const successEmbed = new EmbedBuilder()
+                .setTitle('✅ Guild Name Updated')
+                .setDescription('The Albion guild name has been successfully updated.')
+                .addFields([
                     {
-                        title: '✅ Guild Name Updated',
-                        description: 'The Albion guild name has been successfully updated.',
-                        fields: [
-                            {
-                                name: 'New Guild Name',
-                                value: `\`${guildName}\``,
-                                inline: true
-                            }
-                        ],
-                        color: Colors.Green,
-                        timestamp: new Date().toISOString(),
-                        footer: {
-                            text: `Updated by ${message.author.tag}`
-                        }
+                        name: 'New Guild Name',
+                        value: `\`${guildName}\``,
+                        inline: true
                     }
-                ]
+                ])
+                .setColor(Colors.Green)
+                .setTimestamp()
+                .setFooter({
+                    text: `Updated by ${isSlash ? message.user.tag : message.author.tag}`
+                });
+
+            await message.reply({
+                embeds: [successEmbed],
+                ephemeral: isSlash
             });
         } catch (error) {
             console.error('Error setting guild name:', error);
+            const errorEmbed = new EmbedBuilder()
+                .setTitle('❌ Update Failed')
+                .setDescription('An error occurred while trying to update the guild name.')
+                .setColor(Colors.Red)
+                .setTimestamp()
+                .setFooter({
+                    text: `Attempted by ${isSlash ? message.user.tag : message.author.tag}`
+                });
+
             await message.reply({
-                embeds: [
-                    {
-                        title: '❌ Update Failed',
-                        description: 'An error occurred while trying to update the guild name.',
-                        color: Colors.Red,
-                        timestamp: new Date().toISOString(),
-                        footer: {
-                            text: `Attempted by ${message.author.tag}`
-                        }
-                    }
-                ]
+                embeds: [errorEmbed],
+                ephemeral: isSlash
             });
         }
     }

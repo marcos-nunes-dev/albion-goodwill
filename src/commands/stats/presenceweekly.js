@@ -11,8 +11,17 @@ module.exports = new Command({
     cooldown: 5,
     async execute(message, args, handler) {
         try {
-            const weekStart = getWeekStart();
-            const targetUser = message.mentions.users.first() || message.author;
+            const isSlash = message.commandName === 'presenceweekly';
+            
+            // Get target user based on command type
+            let targetUser;
+            if (isSlash) {
+                targetUser = message.options.getUser('user') || message.user;
+            } else {
+                targetUser = message.mentions.users.first() || message.author;
+            }
+
+            const weekStart = getWeekStart(new Date());
             const member = await message.guild.members.fetch(targetUser.id);
 
             const stats = await prisma.weeklyActivity.findUnique({
@@ -32,10 +41,13 @@ module.exports = new Command({
                         name: member.displayName,
                         iconURL: targetUser.displayAvatarURL({ dynamic: true })
                     })
-                    .setDescription('❌ No activity recorded this week.')
+                    .setDescription('❌ No activity recorded this week. Or we just have partial data.')
                     .setFooter({ text: 'Try joining a voice channel or sending messages!' });
 
-                await message.reply({ embeds: [noStatsEmbed] });
+                await message.reply({ 
+                    embeds: [noStatsEmbed],
+                    ephemeral: isSlash
+                });
                 return;
             }
 
@@ -56,7 +68,7 @@ module.exports = new Command({
                     name: `${member.displayName}'s Weekly Activity`,
                     iconURL: targetUser.displayAvatarURL({ dynamic: true })
                 })
-                .setDescription(`Activity stats for week of <t:${Math.floor(weekStart.getTime() / 1000)}:D>`)
+                .setDescription(`Activity stats for week starting <t:${Math.floor(weekStart.getTime() / 1000)}:D>`)
                 .addFields(
                     {
                         name: '🎤 Voice Activity',
@@ -70,10 +82,7 @@ module.exports = new Command({
                     },
                     {
                         name: '💬 Chat Activity',
-                        value: [
-                            `Messages Sent: \`${stats.messageCount}\``,
-                            `Daily Average: \`${Math.round(stats.messageCount / 7)}\``,
-                        ].join('\n'),
+                        value: `Messages Sent: \`${stats.messageCount}\``,
                         inline: true
                     },
                     {
@@ -85,15 +94,17 @@ module.exports = new Command({
                         name: '📊 Activity Distribution',
                         value: [
                             `${progressBar}`,
-                            `Active: ${activePercentage}% | AFK: ${afkPercentage}%`,
-                            `Daily Average: \`${formatDuration(Math.round(activeTime / 7))}\``
+                            `Active: ${activePercentage}% | AFK: ${afkPercentage}%`
                         ].join('\n')
                     }
                 )
                 .setTimestamp()
                 .setFooter({ text: 'Last updated' });
 
-            await message.reply({ embeds: [embed] });
+            await message.reply({ 
+                embeds: [embed],
+                ephemeral: isSlash
+            });
         } catch (error) {
             console.error('Error fetching weekly stats:', error);
             const errorEmbed = new EmbedBuilder()
@@ -101,7 +112,10 @@ module.exports = new Command({
                 .setTitle('❌ Error')
                 .setDescription('Failed to fetch weekly stats. Please try again later.');
 
-            await message.reply({ embeds: [errorEmbed] });
+            await message.reply({ 
+                embeds: [errorEmbed],
+                ephemeral: isSlash
+            });
         }
     }
 }); 

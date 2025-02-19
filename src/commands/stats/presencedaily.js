@@ -11,10 +11,19 @@ module.exports = new Command({
     cooldown: 5,
     async execute(message, args, handler) {
         try {
+            const isSlash = message.commandName === 'presencedaily';
+            
+            // Get target user based on command type
+            let targetUser;
+            if (isSlash) {
+                targetUser = message.options.getUser('user') || message.user;
+            } else {
+                targetUser = message.mentions.users.first() || message.author;
+            }
+
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
-            const targetUser = message.mentions.users.first() || message.author;
             const member = await message.guild.members.fetch(targetUser.id);
 
             const stats = await prisma.dailyActivity.findUnique({
@@ -37,7 +46,10 @@ module.exports = new Command({
                     .setDescription('❌ No activity recorded today.')
                     .setFooter({ text: 'Try joining a voice channel or sending messages!' });
 
-                await message.reply({ embeds: [noStatsEmbed] });
+                await message.reply({ 
+                    embeds: [noStatsEmbed],
+                    ephemeral: isSlash
+                });
                 return;
             }
 
@@ -91,7 +103,10 @@ module.exports = new Command({
                 .setTimestamp()
                 .setFooter({ text: 'Last updated' });
 
-            await message.reply({ embeds: [embed] });
+            await message.reply({ 
+                embeds: [embed],
+                ephemeral: isSlash
+            });
         } catch (error) {
             console.error('Error fetching daily stats:', error);
             const errorEmbed = new EmbedBuilder()
@@ -99,7 +114,10 @@ module.exports = new Command({
                 .setTitle('❌ Error')
                 .setDescription('Failed to fetch daily stats. Please try again later.');
 
-            await message.reply({ embeds: [errorEmbed] });
+            await message.reply({ 
+                embeds: [errorEmbed],
+                ephemeral: isSlash
+            });
         }
     }
 }); 
