@@ -244,6 +244,59 @@ const commands = [
                 .setDescription('The user to check stats for (defaults to you)')
                 .setRequired(false)
         ),
+    new SlashCommandBuilder()
+        .setName('setup')
+        .setDescription('Configure all guild settings at once')
+        .addStringOption(option =>
+            option.setName('guild_id')
+                .setDescription('Your Albion guild ID')
+                .setRequired(false)
+        )
+        .addStringOption(option =>
+            option.setName('guild_name')
+                .setDescription('Your Albion guild name')
+                .setRequired(false)
+        )
+        .addRoleOption(option =>
+            option.setName('verified_role')
+                .setDescription('Role for verified members')
+                .setRequired(false)
+        )
+        .addRoleOption(option =>
+            option.setName('tank_role')
+                .setDescription('Role for Tank players')
+                .setRequired(false)
+        )
+        .addRoleOption(option =>
+            option.setName('healer_role')
+                .setDescription('Role for Healer players')
+                .setRequired(false)
+        )
+        .addRoleOption(option =>
+            option.setName('support_role')
+                .setDescription('Role for Support players')
+                .setRequired(false)
+        )
+        .addRoleOption(option =>
+            option.setName('melee_role')
+                .setDescription('Role for Melee DPS players')
+                .setRequired(false)
+        )
+        .addRoleOption(option =>
+            option.setName('ranged_role')
+                .setDescription('Role for Ranged DPS players')
+                .setRequired(false)
+        )
+        .addRoleOption(option =>
+            option.setName('mount_role')
+                .setDescription('Role for Battlemount players')
+                .setRequired(false)
+        )
+        .addStringOption(option =>
+            option.setName('prefix')
+                .setDescription('Custom command prefix (must start with: ! $ % & * # @ ? .)')
+                .setRequired(false)
+        ),
 ];
 
 async function registerSlashCommands(client) {
