@@ -174,21 +174,7 @@ module.exports = new Command({
                 )
                 .setTimestamp();
 
-            // Send initial response
-            let initialMessage;
-            if (isInteraction) {
-                await source.reply({ embeds: [summaryEmbed] });
-                initialMessage = await source.fetchReply();
-            } else {
-                initialMessage = await source.reply({ embeds: [summaryEmbed] });
-            }
-
-            // Initialize pagination
-            const itemsPerPage = 10;
-            const pages = Math.ceil(validEntries.length / itemsPerPage);
-            let currentPage = 0;
-
-            // Create page embed
+            // Create page embed function
             const getPageEmbed = (page) => {
                 const start = page * itemsPerPage;
                 const end = Math.min(start + itemsPerPage, validEntries.length);
@@ -210,6 +196,20 @@ module.exports = new Command({
                     )
                     .setFooter({ text: `Total Members: ${validEntries.length}` });
             };
+
+            // Send initial response
+            let initialMessage;
+            if (isInteraction) {
+                await source.reply({ embeds: [summaryEmbed] });
+                initialMessage = await source.fetchReply();
+            } else {
+                initialMessage = await source.reply({ embeds: [summaryEmbed] });
+            }
+
+            // Initialize pagination
+            const itemsPerPage = 10;
+            const pages = Math.ceil(validEntries.length / itemsPerPage);
+            let currentPage = 0;
 
             // Create navigation buttons
             const getButtons = (currentPage) => {

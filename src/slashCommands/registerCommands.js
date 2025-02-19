@@ -311,6 +311,10 @@ const commands = [
 
 async function registerSlashCommands(client) {
     try {
+        if (!client || !client.user) {
+            throw new Error('Client not properly initialized');
+        }
+
         console.log('Started refreshing application (/) commands.');
 
         const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
