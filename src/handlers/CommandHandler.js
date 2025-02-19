@@ -3,12 +3,20 @@ const { formatDuration, getWeekStart, getMonthStart } = require('../utils/timeUt
 const { fetchGuildStats, getMainRole, calculatePlayerScores } = require('../utils/albionApi');
 const { registerCommands } = require('../commands/registerCommands');
 const axios = require('axios');
+const { Collection } = require('discord.js');
+const { commands } = require('../commands/registerCommands');
 
 class CommandHandler {
   constructor() {
     this.prefix = '!albiongw';
     this.prefixCache = new Map();
     this.MAX_COMPETITORS = 5;
+    
+    // Initialize commands collection
+    this.commands = new Collection();
+    for (const command of commands) {
+      this.commands.set(command.name, command);
+    }
   }
 
   async getGuildPrefix(guildId) {
@@ -444,225 +452,29 @@ class CommandHandler {
   }
 
   async handleInteraction(interaction) {
-    if (!interaction.isChatInputCommand()) return;
+    if (!interaction.isCommand()) return;
 
     try {
-      switch (interaction.commandName) {
-        case 'ping':
-          const sent = await interaction.reply({ content: 'Pong!', fetchReply: true });
-          const latency = sent.createdTimestamp - interaction.createdTimestamp;
-          const apiLatency = Math.round(interaction.client.ws.ping);
-
-          await interaction.editReply([
-            '🏓 Pong!',
-            `Latência: ${latency}ms`,
-            `API Latência: ${apiLatency}ms`
-          ].join('\n'));
-          break;
-        case 'stats':
-          await this.handleStatsCommand(interaction);
-          break;
-        case 'leaderboard':
-          await this.handleLeaderboardCommand(interaction);
-          break;
-        case 'rolecheck':
-          const role = interaction.options.getRole('role');
-          const period = interaction.options.getString('period') || 'weekly';
-          await this.handleRoleActivityCheck(interaction, role, period);
-          break;
-        case 'settings':
-          const subcommand = interaction.options.getSubcommand();
-          switch (subcommand) {
-            case 'setguildid':
-              const guildId = interaction.options.getString('id');
-              await this.handleSetGuildId(interaction, guildId);
-              break;
-            case 'setprefix':
-              const prefix = interaction.options.getString('prefix');
-              await this.handleSetPrefix(interaction, prefix);
-              break;
-            case 'setguildname':
-              const name = interaction.options.getString('name');
-              await this.handleSetGuildName(interaction, name);
-              break;
-            case 'setrole':
-              const type = interaction.options.getString('type');
-              const role = interaction.options.getRole('role');
-              await this.handleSetRole(interaction, type, role);
-              break;
-            case 'setverifiedrole':
-              const verifiedRole = interaction.options.getRole('role');
-              await this.handleSetVerifiedRole(interaction, verifiedRole);
-              break;
-          }
-          break;
-        case 'competitors':
-          switch (interaction.options.getSubcommand()) {
-            case 'add':
-              const addId = interaction.options.getString('id');
-              await this.handleAddCompetitor(interaction, addId);
-              break;
-            case 'remove':
-              const removeId = interaction.options.getString('id');
-              await this.handleRemoveCompetitor(interaction, removeId);
-              break;
-            case 'list':
-              await this.listCompetitors(interaction);
-              break;
-          }
-          break;
-        case 'playermmr':
-          const playerName = interaction.options.getString('player');
-          await this.handlePlayerMMR(interaction, playerName);
-          break;
-        case 'refresh':
-          await this.handleRefreshCommands(interaction);
-          break;
-        case 'mmrrank':
-          await this.handleMMRRank(interaction);
-          break;
-        case 'updatemembersrole':
-          const membersRole = interaction.options.getRole('members');
-          await this.handleUpdateMembersRole(interaction, membersRole);
-          break;
-        case 'register':
-          const region = interaction.options.getString('region');
-          const nickname = interaction.options.getString('nickname');
-          await this.handleRegister(interaction, region, nickname);
-          break;
-        case 'unregister':
-          const playerToUnregister = interaction.options.getString('playername');
-          await this.handleUnregister(interaction, playerToUnregister);
-          break;
-        case 'checkregistrations':
-          const roleToCheck = interaction.options.getRole('role');
-          await this.handleCheckRegistrations(interaction, roleToCheck);
-          break;
-        case 'help':
-          await this.showHelp(interaction);
-          break;
+      // Add a defer reply for commands that might take longer
+      if (interaction.commandName === 'setup') {
+        await interaction.deferReply({ ephemeral: true });
       }
+
+      const command = this.commands.get(interaction.commandName);
+      if (!command) return;
+
+      // Execute the command with the interaction context
+      await command.execute(interaction, this);
     } catch (error) {
-      console.error('Command error:', error.message);
-      await interaction.reply({
-        content: 'There was an error executing this command!',
-        ephemeral: true
-      });
-    }
-  }
-
-  async handleStatsCommand(interaction) {
-    const subcommand = interaction.options.getSubcommand();
-    const targetUser = interaction.options.getUser('user');
-
-    await interaction.deferReply();
-
-    try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const userId = targetUser ? targetUser.id : interaction.user.id;
-      const displayName = targetUser ? targetUser.displayName : interaction.user.username;
-      let stats;
-
-      switch (subcommand) {
-        case 'daily':
-          stats = await prisma.dailyActivity.findUnique({
-            where: {
-              userId_guildId_date: {
-                userId,
-                guildId: interaction.guildId,
-                date: today
-              }
-            }
-          });
-          break;
-        case 'weekly':
-          stats = await prisma.weeklyActivity.findUnique({
-            where: {
-              userId_guildId_weekStart: {
-                userId,
-                guildId: interaction.guildId,
-                weekStart: getWeekStart(today)
-              }
-            }
-          });
-          break;
-        case 'monthly':
-          stats = await prisma.monthlyActivity.findUnique({
-            where: {
-              userId_guildId_monthStart: {
-                userId,
-                guildId: interaction.guildId,
-                monthStart: getMonthStart(today)
-              }
-            }
-          });
-          break;
+      console.error('Error executing command:', error);
+      
+      // Handle failed interactions
+      const errorMessage = 'Ocorreu um erro ao executar o comando.';
+      if (interaction.deferred) {
+        await interaction.editReply({ content: errorMessage, ephemeral: true });
+      } else if (!interaction.replied) {
+        await interaction.reply({ content: errorMessage, ephemeral: true });
       }
-
-      if (!stats) {
-        await interaction.editReply(`No activity recorded for ${targetUser ? displayName : 'you'}.`);
-        return;
-      }
-
-      const period = `${targetUser ? `${displayName}'s` : 'Your'} ${subcommand.charAt(0).toUpperCase() + subcommand.slice(1)}`;
-      const response = this.formatStats(period, stats);
-      await interaction.editReply(response);
-    } catch (error) {
-      console.error('Stats command error:', error.message);
-      await interaction.editReply('Failed to fetch stats.');
-    }
-  }
-
-  async handleLeaderboardCommand(interaction) {
-    await interaction.deferReply();
-
-    try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const topUsers = await prisma.dailyActivity.findMany({
-        where: {
-          date: today,
-          guildId: interaction.guildId
-        },
-        orderBy: [
-          { voiceTimeSeconds: 'desc' },
-          { messageCount: 'desc' }
-        ],
-        take: 10
-      });
-
-      if (topUsers.length === 0) {
-        await interaction.editReply('No activity recorded today.');
-        return;
-      }
-
-      const members = await interaction.guild.members.fetch();
-      const leaderboardLines = topUsers.map((user, index) => {
-        const member = members.get(user.userId);
-        const displayName = member ? member.displayName : user.username;
-
-        return [
-          `${index + 1}. **${displayName}**`,
-          `   🎤 Voice: ${formatDuration(user.voiceTimeSeconds)}`,
-          `   💬 Messages: ${user.messageCount}`,
-          user.afkTimeSeconds > 0 ? `   💤 AFK: ${formatDuration(user.afkTimeSeconds)}` : '',
-          ''
-        ].filter(Boolean).join('\n');
-      });
-
-      const response = [
-        '**🏆 Today\'s Most Active Members:**',
-        '',
-        ...leaderboardLines
-      ].join('\n');
-
-      await interaction.editReply(response);
-    } catch (error) {
-      console.error('Leaderboard error:', error.message);
-      await interaction.editReply('Failed to fetch leaderboard.');
     }
   }
 

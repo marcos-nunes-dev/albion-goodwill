@@ -1,4 +1,5 @@
 const { REST, Routes, SlashCommandBuilder } = require('discord.js');
+const prisma = require('../config/prisma');
 
 const commands = [
   new SlashCommandBuilder()
@@ -215,65 +216,128 @@ const commands = [
   new SlashCommandBuilder()
     .setName('help')
     .setDescription('Mostrar lista de comandos disponíveis'),
-  new SlashCommandBuilder()
-    .setName('setup')
-    .setDescription('Configuração inicial completa do bot')
-    .setDefaultMemberPermissions('0') // Admin only
-    .addStringOption(option =>
-      option
-        .setName('guildname')
-        .setDescription('Nome da guild no Albion')
-        .setRequired(true))
-    .addStringOption(option =>
-      option
-        .setName('commandprefix')
-        .setDescription('Prefixo para comandos (ex: !ag)')
-        .setRequired(true))
-    .addStringOption(option =>
-      option
-        .setName('albionguildid')
-        .setDescription('ID da guild do Albion')
-        .setRequired(true))
-    .addStringOption(option =>
-      option
-        .setName('competitorsids')
-        .setDescription('IDs das guilds competidoras (separados por vírgula)')
-        .setRequired(true))
-    .addRoleOption(option =>
-      option
-        .setName('battlemountrole')
-        .setDescription('Cargo para Battlemount')
-        .setRequired(true))
-    .addRoleOption(option =>
-      option
-        .setName('meleerole')
-        .setDescription('Cargo para DPS Melee')
-        .setRequired(true))
-    .addRoleOption(option =>
-      option
-        .setName('rangedrole')
-        .setDescription('Cargo para DPS Ranged')
-        .setRequired(true))
-    .addRoleOption(option =>
-      option
-        .setName('healerrole')
-        .setDescription('Cargo para Healer')
-        .setRequired(true))
-    .addRoleOption(option =>
-      option
-        .setName('supportrole')
-        .setDescription('Cargo para Support')
-        .setRequired(true))
-    .addRoleOption(option =>
-      option
-        .setName('tankrole')
-        .setDescription('Cargo para Tank')
-        .setRequired(true))
-    .addRoleOption(option =>
-      option
-        .setName('verifiedrole')
-        .setDescription('Cargo para membros com nickname verificado')
-        .setRequired(true)),
+  {
+    ...new SlashCommandBuilder()
+      .setName('setup')
+      .setDescription('Configuração inicial completa do bot')
+      .setDefaultMemberPermissions('0') // Admin only
+      .addStringOption(option =>
+        option
+          .setName('guildname')
+          .setDescription('Nome da guild no Albion')
+          .setRequired(true))
+      .addStringOption(option =>
+        option
+          .setName('commandprefix')
+          .setDescription('Prefixo para comandos (ex: !ag)')
+          .setRequired(true))
+      .addStringOption(option =>
+        option
+          .setName('albionguildid')
+          .setDescription('ID da guild do Albion')
+          .setRequired(true))
+      .addStringOption(option =>
+        option
+          .setName('competitorsids')
+          .setDescription('IDs das guilds competidoras (separados por vírgula)')
+          .setRequired(true))
+      .addRoleOption(option =>
+        option
+          .setName('battlemountrole')
+          .setDescription('Cargo para Battlemount')
+          .setRequired(true))
+      .addRoleOption(option =>
+        option
+          .setName('meleerole')
+          .setDescription('Cargo para DPS Melee')
+          .setRequired(true))
+      .addRoleOption(option =>
+        option
+          .setName('rangedrole')
+          .setDescription('Cargo para DPS Ranged')
+          .setRequired(true))
+      .addRoleOption(option =>
+        option
+          .setName('healerrole')
+          .setDescription('Cargo para Healer')
+          .setRequired(true))
+      .addRoleOption(option =>
+        option
+          .setName('supportrole')
+          .setDescription('Cargo para Support')
+          .setRequired(true))
+      .addRoleOption(option =>
+        option
+          .setName('tankrole')
+          .setDescription('Cargo para Tank')
+          .setRequired(true))
+      .addRoleOption(option =>
+        option
+          .setName('verifiedrole')
+          .setDescription('Cargo para membros com nickname verificado')
+          .setRequired(true))
+      .toJSON(),
+    async execute(interaction, handler) {
+      try {
+        const guildName = interaction.options.getString('guildname');
+        const commandPrefix = interaction.options.getString('commandprefix');
+        const albionGuildId = interaction.options.getString('albionguildid');
+        const competitorsIds = interaction.options.getString('competitorsids').split(',').map(id => id.trim());
+        
+        // Get all the role options
+        const battlemountRole = interaction.options.getRole('battlemountrole');
+        const meleeRole = interaction.options.getRole('meleerole');
+        const rangedRole = interaction.options.getRole('rangedrole');
+        const healerRole = interaction.options.getRole('healerrole');
+        const supportRole = interaction.options.getRole('supportrole');
+        const tankRole = interaction.options.getRole('tankrole');
+        const verifiedRole = interaction.options.getRole('verifiedrole');
+
+        // Update guild settings
+        await prisma.guildSettings.upsert({
+          where: { guildId: interaction.guildId },
+          update: {
+            guildName,
+            commandPrefix,
+            albionGuildId,
+            competitorIds: competitorsIds,
+            battlemountRoleId: battlemountRole.id,
+            dpsMeleeRoleId: meleeRole.id,
+            dpsRangedRoleId: rangedRole.id,
+            healerRoleId: healerRole.id,
+            supportRoleId: supportRole.id,
+            tankRoleId: tankRole.id,
+            nicknameVerifiedId: verifiedRole.id
+          },
+          create: {
+            guildId: interaction.guildId,
+            guildName,
+            commandPrefix,
+            albionGuildId,
+            competitorIds: competitorsIds,
+            battlemountRoleId: battlemountRole.id,
+            dpsMeleeRoleId: meleeRole.id,
+            dpsRangedRoleId: rangedRole.id,
+            healerRoleId: healerRole.id,
+            supportRoleId: supportRole.id,
+            tankRoleId: tankRole.id,
+            nicknameVerifiedId: verifiedRole.id
+          }
+        });
+
+        await interaction.editReply({
+          content: '✅ Configuração concluída com sucesso!',
+          ephemeral: true
+        });
+      } catch (error) {
+        console.error('Setup error:', error);
+        await interaction.editReply({
+          content: '❌ Erro ao realizar configuração: ' + error.message,
+          ephemeral: true
+        });
+      }
+    }
+  }
 ];
 
 async function registerCommands(client) {
