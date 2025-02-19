@@ -10,14 +10,30 @@ module.exports = new Command({
     usage: '[daily|weekly|monthly]',
     aliases: ['plb'],
     cooldown: 10,
-    async execute(message, args, handler) {
+    async execute(source, args, handler) {
         try {
-            const period = (args[0] || 'monthly').toLowerCase();
+            // Determine if this is a slash command or message command
+            const isInteraction = source.commandName !== undefined;
+            
+            // Get period from args or interaction options
+            let period;
+            if (isInteraction) {
+                period = (source.options?.getString('period') || 'monthly').toLowerCase();
+            } else {
+                period = (args[0] || 'monthly').toLowerCase();
+            }
+
+            // Validate period
             if (!['daily', 'weekly', 'monthly'].includes(period)) {
                 const errorEmbed = new EmbedBuilder()
                     .setColor(0xFF0000)
                     .setDescription('❌ Invalid period. Use: daily, weekly, or monthly');
-                await message.reply({ embeds: [errorEmbed] });
+                
+                if (isInteraction) {
+                    await source.reply({ embeds: [errorEmbed], ephemeral: true });
+                } else {
+                    await source.reply({ embeds: [errorEmbed] });
+                }
                 return;
             }
 
@@ -53,7 +69,7 @@ module.exports = new Command({
             // First try to get aggregated stats
             stats = await prisma[table].findMany({
                 where: {
-                    guildId: message.guild.id,
+                    guildId: source.guild.id,
                     [dateField]: date
                 }
             });
@@ -67,7 +83,7 @@ module.exports = new Command({
                 stats = await prisma.dailyActivity.groupBy({
                     by: ['userId'],
                     where: {
-                        guildId: message.guild.id,
+                        guildId: source.guild.id,
                         date: {
                             gte: monthStart,
                             lt: nextMonth
@@ -96,14 +112,18 @@ module.exports = new Command({
                     .setDescription(`No activity recorded for this ${period} period.`)
                     .setFooter({ text: 'Try joining a voice channel or sending messages!' });
 
-                await message.reply({ embeds: [noStatsEmbed] });
+                if (isInteraction) {
+                    await source.reply({ embeds: [noStatsEmbed] });
+                } else {
+                    await source.reply({ embeds: [noStatsEmbed] });
+                }
                 return;
             }
 
             // Process and sort all members
             const memberActivities = await Promise.all(
                 stats.map(async (stat) => {
-                    const member = await message.guild.members.fetch(stat.userId).catch(() => null);
+                    const member = await source.guild.members.fetch(stat.userId).catch(() => null);
                     if (!member) return null;
 
                     const activeTime = stat.voiceTimeSeconds - stat.afkTimeSeconds;
@@ -154,7 +174,14 @@ module.exports = new Command({
                 )
                 .setTimestamp();
 
-            await message.reply({ embeds: [summaryEmbed] });
+            // Send initial response
+            let initialMessage;
+            if (isInteraction) {
+                await source.reply({ embeds: [summaryEmbed] });
+                initialMessage = await source.fetchReply();
+            } else {
+                initialMessage = await source.reply({ embeds: [summaryEmbed] });
+            }
 
             // Initialize pagination
             const itemsPerPage = 10;
@@ -211,7 +238,7 @@ module.exports = new Command({
             };
 
             // Send initial page
-            const pageMessage = await message.channel.send({
+            const pageMessage = await source.channel.send({
                 embeds: [getPageEmbed(0)],
                 components: [getButtons(0)]
             });
@@ -223,7 +250,8 @@ module.exports = new Command({
             });
 
             collector.on('collect', async (interaction) => {
-                if (interaction.user.id !== message.author.id) {
+                const userId = isInteraction ? source.user.id : source.author.id;
+                if (interaction.user.id !== userId) {
                     await interaction.reply({ 
                         content: 'Only the command user can navigate pages.', 
                         ephemeral: true 
@@ -263,7 +291,15 @@ module.exports = new Command({
                 .setTitle('❌ Error')
                 .setDescription('Failed to generate leaderboard. Please try again later.');
 
-            await message.reply({ embeds: [errorEmbed] });
+            if (isInteraction) {
+                if (!source.replied) {
+                    await source.reply({ embeds: [errorEmbed], ephemeral: true });
+                } else {
+                    await source.followUp({ embeds: [errorEmbed], ephemeral: true });
+                }
+            } else {
+                await source.reply({ embeds: [errorEmbed] });
+            }
         }
     }
 }); 
