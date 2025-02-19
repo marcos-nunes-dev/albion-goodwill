@@ -86,50 +86,64 @@ module.exports = new Command({
     category: 'albion',
     usage: '<player_name> <role> [alltime] [compare_to=player1,player2,...]',
     cooldown: 30,
-    async execute(message, args) {
-        if (args.length < 2) {
-            return message.reply({
-                embeds: [
-                    new EmbedBuilder()
-                        .setTitle('Invalid Usage')
-                        .setDescription('Please provide both player name and role.\nExample: !canplay PlayerName tank [alltime] [compare_to=player1,player2]')
-                        .setColor(Colors.Red)
-                ]
-            });
-        }
-
-        const playerName = args[0];
-        const roleParam = args[1].toLowerCase();
-        const validRoles = ['tank', 'support', 'healer', 'melee', 'ranged', 'mount'];
-
-        // Parse optional parameters
-        const isAllTime = args.some(arg => arg.toLowerCase() === 'alltime');
-        const compareToArg = args.find(arg => arg.toLowerCase().startsWith('compare_to='));
-        const comparePlayers = compareToArg 
-            ? compareToArg.split('=')[1].split(',').slice(0, 5)
-            : null;
-
-        if (!validRoles.includes(roleParam)) {
-            return message.reply({
-                embeds: [
-                    new EmbedBuilder()
-                        .setTitle('Invalid Role')
-                        .setDescription(`Valid roles are: ${validRoles.join(', ')}`)
-                        .setColor(Colors.Red)
-                ]
-            });
-        }
-
-        const initialResponse = await message.reply({
-            embeds: [
-                new EmbedBuilder()
-                    .setTitle('Fetching Data')
-                    .setDescription(`Retrieving ${isAllTime ? 'all-time' : 'last 30 days'} player and guild statistics...`)
-                    .setColor(Colors.Blue)
-            ]
-        });
-
+    async execute(message, args, handler) {
         try {
+            const isSlash = message.commandName === 'canplay';
+
+            // Get parameters based on command type
+            let playerName, roleParam, isAllTime, comparePlayers;
+
+            if (isSlash) {
+                playerName = message.options.getString('player');
+                roleParam = message.options.getString('role');
+                isAllTime = message.options.getBoolean('alltime') || false;
+                comparePlayers = message.options.getString('compare_to')?.split(',').slice(0, 5);
+            } else {
+                if (args.length < 2) {
+                    const errorEmbed = new EmbedBuilder()
+                        .setTitle('Invalid Usage')
+                        .setDescription([
+                            'Please provide both player name and role.',
+                            'Example: `!albiongw canplay PlayerName tank [alltime] [compare_to=player1,player2]`'
+                        ].join('\n'))
+                        .setColor(Colors.Red);
+
+                    await message.reply({ embeds: [errorEmbed] });
+                    return;
+                }
+
+                playerName = args[0];
+                roleParam = args[1].toLowerCase();
+                isAllTime = args.some(arg => arg.toLowerCase() === 'alltime');
+                const compareToArg = args.find(arg => arg.toLowerCase().startsWith('compare_to='));
+                comparePlayers = compareToArg ? compareToArg.split('=')[1].split(',').slice(0, 5) : null;
+            }
+
+            const validRoles = ['tank', 'support', 'healer', 'melee', 'ranged', 'mount'];
+
+            if (!validRoles.includes(roleParam)) {
+                const errorEmbed = new EmbedBuilder()
+                    .setTitle('Invalid Role')
+                    .setDescription(`Valid roles are: ${validRoles.join(', ')}`)
+                    .setColor(Colors.Red);
+
+                await message.reply({
+                    embeds: [errorEmbed],
+                    ephemeral: isSlash
+                });
+                return;
+            }
+
+            const loadingEmbed = new EmbedBuilder()
+                .setTitle('Fetching Data')
+                .setDescription(`Retrieving ${isAllTime ? 'all-time' : 'last 30 days'} player and guild statistics...`)
+                .setColor(Colors.Blue);
+
+            const initialResponse = await message.reply({
+                embeds: [loadingEmbed],
+                ephemeral: isSlash
+            });
+
             // Fetch player's weapons data with optional alltime parameter
             const apiUrl = `https://murderledger.albiononline2d.com/api/players/${playerName}/stats/weapons${isAllTime ? '?lookback_days=9999' : ''}`;
             const playerWeaponsResponse = await axios.get(apiUrl);
@@ -142,7 +156,8 @@ module.exports = new Command({
                             .setTitle('No Data Found')
                             .setDescription(`No weapon data found for player ${playerName}`)
                             .setColor(Colors.Red)
-                    ]
+                    ],
+                    ephemeral: isSlash
                 });
             }
 
@@ -175,11 +190,18 @@ module.exports = new Command({
                         .setDescription(`Please select a weapon to compare for ${playerName}\n${isAllTime ? '(All-time statistics)' : '(Last 30 days statistics)'}\nShowing top 25 most used weapons`)
                         .setColor(Colors.Blue)
                 ],
-                components: [weaponSelect]
+                components: [weaponSelect],
+                ephemeral: isSlash
             });
 
             // Handle weapon selection
-            const filter = i => i.user.id === message.author.id;
+            const filter = i => {
+                const isAuthor = isSlash ? 
+                    i.user.id === message.user.id : 
+                    i.user.id === message.author.id;
+                return isAuthor;
+            };
+
             try {
                 const selection = await selectionMessage.awaitMessageComponent({ filter, time: 30000 });
                 const selectedWeapon = playerWeapons.find(w => w.weapon === selection.values[0]);
@@ -197,7 +219,8 @@ module.exports = new Command({
                                 .setDescription('Albion guild ID not configured.')
                                 .setColor(Colors.Red)
                         ],
-                        components: []
+                        components: [],
+                        ephemeral: isSlash
                     });
                 }
 
@@ -224,7 +247,8 @@ module.exports = new Command({
                                 : 'Searching for players with similar weapon experience...')
                             .setColor(Colors.Blue)
                     ],
-                    components: []
+                    components: [],
+                    ephemeral: isSlash
                 });
 
                 if (comparePlayers) {
@@ -372,7 +396,8 @@ module.exports = new Command({
                 });
 
                 await message.channel.send({
-                    embeds: [comparisonEmbed]
+                    embeds: [comparisonEmbed],
+                    ephemeral: isSlash
                 });
 
             } catch (error) {
@@ -384,21 +409,30 @@ module.exports = new Command({
                             .setDescription('Weapon selection timed out. Please try again.')
                             .setColor(Colors.Red)
                     ],
-                    components: []
+                    components: [],
+                    ephemeral: isSlash
                 });
             }
 
         } catch (error) {
             console.error('Error in canplay command:', error);
-            await initialResponse.edit({
-                embeds: [
-                    new EmbedBuilder()
-                        .setTitle('Error')
-                        .setDescription('An error occurred while processing the command.')
-                        .setColor(Colors.Red)
-                ],
-                components: []
-            });
+            const errorEmbed = new EmbedBuilder()
+                .setTitle('Error')
+                .setDescription('An error occurred while processing the command.')
+                .setColor(Colors.Red);
+
+            if (message.replied || message.deferred) {
+                await message.editReply({
+                    embeds: [errorEmbed],
+                    components: [],
+                    ephemeral: isSlash
+                });
+            } else {
+                await message.reply({
+                    embeds: [errorEmbed],
+                    ephemeral: isSlash
+                });
+            }
         }
     }
 });
