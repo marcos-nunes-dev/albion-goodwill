@@ -174,7 +174,9 @@ class CommandHandler {
       today.setHours(0, 0, 0, 0);
 
       const userId = targetUser ? targetUser.id : message.author.id;
-      const displayName = targetUser ? targetUser.displayName : message.author.username;
+      const displayName = targetUser ? 
+          (targetUser.displayName || targetUser.user.username) : 
+          (message.member?.displayName || message.author.username);
 
       const stats = await prisma.dailyActivity.findUnique({
         where: {
@@ -203,7 +205,9 @@ class CommandHandler {
     try {
       const weekStart = getWeekStart(new Date());
       const userId = targetUser ? targetUser.id : message.author.id;
-      const displayName = targetUser ? targetUser.displayName : message.author.username;
+      const displayName = targetUser ? 
+          (targetUser.displayName || targetUser.user.username) : 
+          (message.member?.displayName || message.author.username);
 
       const stats = await prisma.weeklyActivity.findUnique({
         where: {
@@ -232,7 +236,9 @@ class CommandHandler {
     try {
       const monthStart = getMonthStart(new Date());
       const userId = targetUser ? targetUser.id : message.author.id;
-      const displayName = targetUser ? targetUser.displayName : message.author.username;
+      const displayName = targetUser ? 
+          (targetUser.displayName || targetUser.user.username) : 
+          (message.member?.displayName || message.author.username);
 
       const stats = await prisma.monthlyActivity.findUnique({
         where: {
@@ -283,7 +289,7 @@ class CommandHandler {
 
       const leaderboardLines = topUsers.map((user, index) => {
         const member = members.get(user.userId);
-        const displayName = member ? member.displayName : user.username;
+        const displayName = member ? (member.displayName || member.user.username) : user.userId;
 
         return [
           `${index + 1}. **${displayName}**`,
@@ -347,7 +353,12 @@ class CommandHandler {
         const percentage = ((voiceTime / topAvgVoiceTime) * 100).toFixed(1);
 
         if (voiceTime < minimumThreshold) {
-          veryInactiveMembers.push({ member, voiceTime, percentage });
+          veryInactiveMembers.push({ 
+            member, 
+            voiceTime, 
+            percentage,
+            displayName: member.displayName || member.user.username
+          });
         }
       }
 
@@ -362,8 +373,8 @@ class CommandHandler {
         `Mínimo Requerido (5%): ${formatDuration(minimumThreshold)}`,
         '',
         '**Membros Abaixo do Limite:**',
-        ...veryInactiveMembers.map(({ member, voiceTime, percentage }) =>
-          `${member.displayName}: ${formatDuration(voiceTime)} (${percentage}%)`
+        ...veryInactiveMembers.map(({ displayName, voiceTime, percentage }) =>
+          `${displayName}: ${formatDuration(voiceTime)} (${percentage}%)`
         ),
         '',
         `Total: ${veryInactiveMembers.length} membros abaixo do limite de 5%`
@@ -1258,7 +1269,7 @@ class CommandHandler {
         // Check if member has verified role
         if (!member.roles.cache.has(settings.nicknameVerifiedId)) {
           notVerified++;
-          notVerifiedMembers.push(member.displayName);
+          notVerifiedMembers.push(member.displayName || member.user.username);
           continue;
         }
 
@@ -1271,7 +1282,7 @@ class CommandHandler {
 
         if (!registration) {
           notVerified++;
-          notVerifiedMembers.push(member.displayName);
+          notVerifiedMembers.push(member.displayName || member.user.username);
           continue;
         }
 
@@ -1649,10 +1660,10 @@ class CommandHandler {
       }
 
       // Create mention list and message
-      const mentions = unregisteredMembers.map(member => member.toString()).join(' ');
+      const memberList = unregisteredMembers.map(member => member.displayName || member.user.username).join('\n');
       const response = [
         `⚠️ **Membros não registrados no cargo ${role.name}:**`,
-        mentions,
+        memberList,
         '',
         '📝 Use o comando `/register` para registrar seu personagem do Albion Online.',
         'Exemplo: `/register region:america nickname:SeuNick`'
