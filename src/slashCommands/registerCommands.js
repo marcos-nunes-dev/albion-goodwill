@@ -57,7 +57,7 @@ const commands = [
         .setDescription('Check unregistered members in a role')
         .addRoleOption(option =>
             option.setName('role')
-                .setDescription('The role to check registrations from')
+                .setDescription('The role to check registrations for')
                 .setRequired(true)
         ),
     new SlashCommandBuilder()
