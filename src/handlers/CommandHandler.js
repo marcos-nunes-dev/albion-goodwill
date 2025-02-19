@@ -437,7 +437,7 @@ class CommandHandler {
       if (!this.checkCooldown(interaction, command)) return;
 
       // Execute command with handler instance
-      await command.execute(interaction, this);
+      await command.execute(interaction, [], this);
     } catch (error) {
       console.error('Interaction error:', error);
       const reply = { content: 'There was an error executing this command!', ephemeral: true };

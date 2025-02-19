@@ -8,7 +8,12 @@ const commands = [
         .setDescription('Check bot latency'),
     new SlashCommandBuilder()
         .setName('help')
-        .setDescription('Display help information about commands'),
+        .setDescription('Display help information about commands')
+        .addStringOption(option =>
+            option.setName('command')
+                .setDescription('Get detailed info about a specific command')
+                .setRequired(false)
+        ),
 
     // Admin Commands
     new SlashCommandBuilder()
