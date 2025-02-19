@@ -12,7 +12,7 @@ module.exports = new Command({
     cooldown: 10,
     async execute(message, args, handler) {
         try {
-            const period = (args[0] || 'daily').toLowerCase();
+            const period = (args[0] || 'monthly').toLowerCase();
             if (!['daily', 'weekly', 'monthly'].includes(period)) {
                 const errorEmbed = new EmbedBuilder()
                     .setColor(0xFF0000)
@@ -25,6 +25,7 @@ module.exports = new Command({
             let date = new Date();
             let table;
             let dateField;
+            let stats = [];
 
             switch (period) {
                 case 'daily':
@@ -44,13 +45,44 @@ module.exports = new Command({
                     break;
             }
 
-            // Fetch all users' stats
-            const stats = await prisma[table].findMany({
+            // First try to get aggregated stats
+            stats = await prisma[table].findMany({
                 where: {
                     guildId: message.guild.id,
                     [dateField]: date
                 }
             });
+
+            // If no monthly stats found, aggregate from daily data
+            if (stats.length === 0 && period === 'monthly') {
+                const monthStart = getMonthStart();
+                const nextMonth = new Date(monthStart);
+                nextMonth.setMonth(nextMonth.getMonth() + 1);
+
+                stats = await prisma.dailyActivity.groupBy({
+                    by: ['userId'],
+                    where: {
+                        guildId: message.guild.id,
+                        date: {
+                            gte: monthStart,
+                            lt: nextMonth
+                        }
+                    },
+                    _sum: {
+                        voiceTimeSeconds: true,
+                        afkTimeSeconds: true,
+                        messageCount: true
+                    }
+                });
+
+                // Transform grouped data to match regular stats format
+                stats = stats.map(stat => ({
+                    userId: stat.userId,
+                    voiceTimeSeconds: stat._sum.voiceTimeSeconds || 0,
+                    afkTimeSeconds: stat._sum.afkTimeSeconds || 0,
+                    messageCount: stat._sum.messageCount || 0
+                }));
+            }
 
             if (stats.length === 0) {
                 const noStatsEmbed = new EmbedBuilder()
