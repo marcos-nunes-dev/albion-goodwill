@@ -1,21 +1,42 @@
+const { Collection } = require('discord.js');
+const { readdirSync, statSync } = require('fs');
+const { join } = require('path');
 const prisma = require('../config/prisma');
 const { formatDuration, getWeekStart, getMonthStart } = require('../utils/timeUtils');
 const { fetchGuildStats, getMainRole, calculatePlayerScores } = require('../utils/albionApi');
-const { registerCommands } = require('../commands/registerCommands');
 const axios = require('axios');
-const { Collection } = require('discord.js');
-const { commands } = require('../commands/registerCommands');
 
 class CommandHandler {
-  constructor() {
+  constructor(client) {
+    this.client = client;
+    this.commands = new Collection();
+    this.cooldowns = new Collection();
     this.prefix = '!albiongw';
     this.prefixCache = new Map();
     this.MAX_COMPETITORS = 5;
     
-    // Initialize commands collection
-    this.commands = new Collection();
-    for (const command of commands) {
-      this.commands.set(command.name, command);
+    this.loadCommands();
+  }
+
+  loadCommands() {
+    const commandsPath = join(__dirname, '..', 'commands');
+    const items = readdirSync(commandsPath);
+
+    for (const item of items) {
+      const itemPath = join(commandsPath, item);
+      
+      // Skip if it's not a directory
+      if (!statSync(itemPath).isDirectory()) {
+        continue;
+      }
+
+      const commandFiles = readdirSync(itemPath)
+        .filter(file => file.endsWith('.js'));
+
+      for (const file of commandFiles) {
+        const command = require(join(itemPath, file));
+        this.commands.set(command.name, command);
+      }
     }
   }
 
@@ -34,135 +55,78 @@ class CommandHandler {
   }
 
   async handleCommand(message) {
+    if (message.author.bot) return;
+
     const guildPrefix = await this.getGuildPrefix(message.guild.id);
-    if (!message.content.startsWith(guildPrefix)) return;
+
+    // Check if message starts with prefix (case insensitive)
+    if (!message.content.toLowerCase().startsWith(guildPrefix.toLowerCase())) return;
 
     const args = message.content.slice(guildPrefix.length).trim().split(/ +/);
-    const command = args.shift()?.toLowerCase();
+    const commandName = args.shift()?.toLowerCase();
+
+    const command = this.commands.get(commandName) || 
+                   this.commands.find(cmd => cmd.aliases?.includes(commandName));
+
+    if (!command) return;
 
     try {
-      switch (command) {
-        case 'ping':
-          await this.handlePing(message);
-          break;
-        case 'daily':
-          await this.getDailyStats(message, message.mentions.users.first());
-          break;
-        case 'weekly':
-          await this.getWeeklyStats(message, message.mentions.users.first());
-          break;
-        case 'monthly':
-          await this.getMonthlyStats(message, message.mentions.users.first());
-          break;
-        case 'leaderboard':
-          await this.getLeaderboard(message);
-          break;
-        case 'help':
-          await this.showHelp(message);
-          break;
-        case 'rolecheck':
-          const role = message.mentions.roles.first();
-          if (!role) {
-            await message.reply('Por favor, mencione um cargo para verificar.');
-            return;
-          }
-          const period = args[1]?.toLowerCase() === 'daily' ? 'daily' : 'weekly';
-          await this.handleRoleActivityCheck(message, role, period);
-          break;
-        case 'setguildid':
-          if (!args[0]) {
-            await message.reply('Por favor, forneça o ID da guild do Albion.');
-            return;
-          }
-          await this.handleSetGuildId(message, args[0]);
-          break;
-        case 'competitors':
-          if (!args[0]) {
-            await this.listCompetitors(message);
-            return;
-          }
-          switch (args[0].toLowerCase()) {
-            case 'add':
-              if (!args[1]) {
-                await message.reply('Por favor, forneça o ID da guild competidora.');
-                return;
-              }
-              await this.handleAddCompetitor(message, args[1]);
-              break;
-            case 'remove':
-              if (!args[1]) {
-                await message.reply('Por favor, forneça o ID da guild competidora.');
-                return;
-              }
-              await this.handleRemoveCompetitor(message, args[1]);
-              break;
-            case 'list':
-              await this.listCompetitors(message);
-              break;
-          }
-          break;
-        case 'playermmr':
-          if (!args[0]) {
-            await message.reply('Por favor, forneça o nome do jogador.');
-            return;
-          }
-          await this.handlePlayerMMR(message, args[0]);
-          break;
-        case 'refresh':
-          await this.handleRefreshCommands(message);
-          break;
-        case 'mmrrank':
-          await this.handleMMRRank(message);
-          break;
-        case 'register':
-          if (!args[0] || !args[1]) {
-            await message.reply('Por favor, use o comando assim: `!albiongw register <region> <nickname>`\nRegiões disponíveis: america, europe, asia');
-            return;
-          }
-          const region = args[0].toLowerCase();
-          if (!['america', 'europe', 'asia'].includes(region)) {
-            await message.reply('Região inválida. Use: america, europe ou asia');
-            return;
-          }
-          const nickname = args[1];
-          await this.handleRegister(message, region, nickname);
-          break;
-        case 'unregister':
-          if (!args[0]) {
-            await message.reply('Por favor, forneça o nome do jogador para remover o registro.');
-            return;
-          }
-          await this.handleUnregister(message, args[0]);
-          break;
-        case 'checkregistrations':
-          if (!args[0]) {
-            await message.reply('Por favor, mencione um cargo para verificar.');
-            return;
-          }
-          const roleToCheck = message.mentions.roles.first();
-          if (!roleToCheck) {
-            await message.reply('Por favor, mencione um cargo válido.');
-            return;
-          }
-          await this.handleCheckRegistrations(message, roleToCheck);
-          break;
+      // Check permissions
+      if (command.permissions?.length > 0) {
+        const missingPerms = command.permissions.filter(perm => !message.member.permissions.has(perm));
+        if (missingPerms.length > 0) {
+          return message.reply(`You need the following permissions: ${missingPerms.join(', ')}`);
+        }
       }
+
+      // Check cooldown
+      if (!this.checkCooldown(message, command)) return;
+
+      // Execute command with handler instance
+      await command.execute(message, args, this);
     } catch (error) {
-      console.error('Command error:', error.message);
+      console.error('Command error:', error);
       await message.reply('There was an error executing this command!');
     }
   }
 
-  async handlePing(message) {
-    const sent = await message.reply('Pong!');
-    const latency = sent.createdTimestamp - message.createdTimestamp;
-    const apiLatency = Math.round(message.client.ws.ping);
+  checkCooldown(source, command) {
+    if (!this.cooldowns.has(command.name)) {
+      this.cooldowns.set(command.name, new Collection());
+    }
 
-    await sent.edit([
-      '🏓 Pong!',
-      `Latência: ${latency}ms`,
-      `API Latência: ${apiLatency}ms`
-    ].join('\n'));
+    const now = Date.now();
+    const timestamps = this.cooldowns.get(command.name);
+    const cooldownAmount = (command.cooldown || 3) * 1000;
+
+    // Get user ID and handle response based on source type
+    const userId = source.user?.id || source.author?.id;
+    const reply = (content) => {
+      if (source.reply) {
+        return source.reply(typeof content === 'string' ? { content } : content);
+      }
+      return source.channel.send(content);
+    };
+
+    if (!userId) return true; // Allow command to proceed if we can't determine user
+
+    if (timestamps.has(userId)) {
+      const expirationTime = timestamps.get(userId) + cooldownAmount;
+
+      if (now < expirationTime) {
+        const timeLeft = (expirationTime - now) / 1000;
+        const cooldownMessage = {
+          content: `Please wait ${timeLeft.toFixed(1)} more second(s) before reusing the \`${command.name}\` command.`,
+          ephemeral: true
+        };
+        reply(cooldownMessage);
+        return false;
+      }
+    }
+
+    timestamps.set(userId, now);
+    setTimeout(() => timestamps.delete(userId), cooldownAmount);
+    return true;
   }
 
   async showHelp(message) {
@@ -170,11 +134,11 @@ class CommandHandler {
     const commands = [
       '**Albion Goodwill Bot Commands:**',
       `\`${guildPrefix} ping\` - Verificar se o bot está funcionando`,
-      `\`${guildPrefix} daily [@user]\` - Mostrar atividade diária (sua ou do usuário mencionado)`,
-      `\`${guildPrefix} weekly [@user]\` - Mostrar atividade semanal`,
-      `\`${guildPrefix} monthly [@user]\` - Mostrar atividade mensal`,
-      `\`${guildPrefix} leaderboard\` - Mostrar top 10 usuários ativos hoje`,
-      `\`${guildPrefix} rolecheck @role [daily|weekly]\` - Verificar atividade dos membros de um cargo`,
+      `\`${guildPrefix} presencedaily [@user]\` - Mostrar presença diária (sua ou do usuário mencionado)`,
+      `\`${guildPrefix} presenceweekly [@user]\` - Mostrar presença semanal`,
+      `\`${guildPrefix} presencemonthly [@user]\` - Mostrar presença mensal`,
+      `\`${guildPrefix} presenceleaderboard [daily|weekly|monthly]\` - Mostrar top 10 usuários ativos`,
+      `\`${guildPrefix} presencecheck @role [daily|weekly]\` - Verificar presença dos membros de um cargo`,
       `\`${guildPrefix} register <region> <nickname>\` - Registrar seu personagem do Albion`,
       '',
       '**Comandos de Administrador:**',
@@ -454,26 +418,34 @@ class CommandHandler {
   async handleInteraction(interaction) {
     if (!interaction.isCommand()) return;
 
+    const command = this.commands.get(interaction.commandName);
+    if (!command) return;
+
     try {
-      // Add a defer reply for commands that might take longer
-      if (interaction.commandName === 'setup') {
-        await interaction.deferReply({ ephemeral: true });
+      // Check permissions
+      if (command.permissions?.length > 0) {
+        const missingPerms = command.permissions.filter(perm => !interaction.member.permissions.has(perm));
+        if (missingPerms.length > 0) {
+          return interaction.reply({
+            content: `You need the following permissions: ${missingPerms.join(', ')}`,
+            ephemeral: true
+          });
+        }
       }
 
-      const command = this.commands.get(interaction.commandName);
-      if (!command) return;
+      // Check cooldown
+      if (!this.checkCooldown(interaction, command)) return;
 
-      // Execute the command with the interaction context
+      // Execute command with handler instance
       await command.execute(interaction, this);
     } catch (error) {
-      console.error('Error executing command:', error);
+      console.error('Interaction error:', error);
+      const reply = { content: 'There was an error executing this command!', ephemeral: true };
       
-      // Handle failed interactions
-      const errorMessage = 'Ocorreu um erro ao executar o comando.';
       if (interaction.deferred) {
-        await interaction.editReply({ content: errorMessage, ephemeral: true });
-      } else if (!interaction.replied) {
-        await interaction.reply({ content: errorMessage, ephemeral: true });
+        await interaction.editReply(reply);
+      } else {
+        await interaction.reply(reply);
       }
     }
   }
@@ -518,6 +490,10 @@ class CommandHandler {
     }
   }
 
+  clearPrefixCache(guildId) {
+    this.prefixCache.delete(guildId);
+  }
+
   async handleSetPrefix(source, newPrefix) {
     // Check admin permissions
     const member = source.member;
@@ -532,12 +508,23 @@ class CommandHandler {
     }
 
     try {
-      await prisma.guildSettings.update({
-        where: { guildId: source.guildId },
-        data: { commandPrefix: newPrefix }
+      await prisma.guildSettings.upsert({
+        where: { 
+          guildId: source.guildId 
+        },
+        update: { 
+          commandPrefix: newPrefix,
+          guildName: source.guild.name
+        },
+        create: {
+          guildId: source.guildId,
+          commandPrefix: newPrefix,
+          guildName: source.guild.name
+        }
       });
 
-      // Update cache
+      // Clear and update cache
+      this.clearPrefixCache(source.guildId);
       this.prefixCache.set(source.guildId, newPrefix);
 
       const response = `Prefixo atualizado para: ${newPrefix}`;
@@ -1018,9 +1005,6 @@ class CommandHandler {
         source.options?.getString('role') :
         source.content.split(' ')[2]?.toLowerCase();
 
-      console.log('Role param:', roleParam); // Debug log
-      console.log('Role groups:', roleGroups.map(g => g.length)); // Debug log
-
       const roleMap = {
         'tank': 0,
         'support': 1,
@@ -1032,14 +1016,8 @@ class CommandHandler {
 
       // Format response for each role
       const roleRankings = roleGroups.map((players, roleIndex) => {
-        if (players.length === 0) {
-          console.log(`No players for role ${roleIndex}`); // Debug log
-          return null;
-        }
-        if (roleParam && roleMap[roleParam] !== roleIndex) {
-          console.log(`Skipping role ${roleIndex} as it doesn't match param ${roleParam}`); // Debug log
-          return null;
-        }
+        if (players.length === 0) return null;
+        if (roleParam && roleMap[roleParam] !== roleIndex) return null;
 
         const scores = calculatePlayerScores(players, roleIndex);
 
@@ -1075,8 +1053,6 @@ class CommandHandler {
           '```'
         ].join('\n');
       }).filter(Boolean);
-
-      console.log('Role rankings length:', roleRankings.length); // Debug log
 
       // Send header message
       const headerMessage = roleParam && roleMap.hasOwnProperty(roleParam) ?
@@ -1521,7 +1497,6 @@ class CommandHandler {
         verifiedRole = await source.guild.roles.fetch(settings.nicknameVerifiedId);
         if (verifiedRole) {
           await source.member.roles.add(verifiedRole);
-          console.log(`Added verified role to ${source.member.user.tag}`);
         }
       } catch (roleError) {
         console.error('Error adding verified role:', roleError);
@@ -1594,7 +1569,6 @@ class CommandHandler {
           const member = await source.guild.members.fetch(registration.userId);
           if (member) {
             await member.roles.remove(settings.nicknameVerifiedId);
-            console.log(`Removed verified role from ${member.user.tag}`);
           }
         } catch (roleError) {
           console.error('Error removing verified role:', roleError);
@@ -1702,4 +1676,4 @@ class CommandHandler {
   }
 }
 
-module.exports = CommandHandler; 
+module.exports = CommandHandler;

@@ -5,9 +5,10 @@ const MessageTracker = require('./handlers/MessageTracker');
 const prisma = require('./config/prisma');
 const { formatDuration } = require('./utils/timeUtils');
 const CommandHandler = require('./handlers/CommandHandler');
+const AutocompleteHandler = require('./handlers/AutocompleteHandler');
 const ActivityAggregator = require('./services/ActivityAggregator');
 const GuildManager = require('./services/GuildManager');
-const { registerCommands } = require('./commands/registerCommands');
+const { registerSlashCommands } = require('./slashCommands/registerCommands');
 const logger = require('./utils/logger');
 
 console.log('Starting bot...');
@@ -32,6 +33,7 @@ const guildManager = new GuildManager();
 const voiceTracker = new VoiceTracker(prisma, guildManager);
 const messageTracker = new MessageTracker();
 const commandHandler = new CommandHandler();
+const autocompleteHandler = new AutocompleteHandler(client);
 const activityAggregator = new ActivityAggregator(client);
 
 // Update railway.toml settings
@@ -52,7 +54,7 @@ client.once('ready', async () => {
   
   try {
     // Register slash commands
-    await registerCommands(client);
+    await registerSlashCommands(client);
 
     // Initialize settings for all current guilds
     for (const guild of client.guilds.cache.values()) {
@@ -210,7 +212,11 @@ client.on('guildCreate', async (guild) => {
 
 client.on('interactionCreate', async (interaction) => {
   try {
-    await commandHandler.handleInteraction(interaction);
+    if (interaction.isAutocomplete()) {
+      await autocompleteHandler.handleAutocomplete(interaction);
+    } else {
+      await commandHandler.handleInteraction(interaction);
+    }
   } catch (error) {
     console.error('Interaction error:', error.message);
   }
