@@ -1,6 +1,6 @@
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
-const { Colors } = require('discord.js');
+const { EmbedBuilder, Colors } = require('discord.js');
 
 module.exports = new Command({
     name: 'checkregistrations',
@@ -10,35 +10,40 @@ module.exports = new Command({
     permissions: ['ADMINISTRATOR'],
     cooldown: 5,
     async execute(message, args, handler) {
-        // Check if a role was mentioned
-        const role = message.mentions.roles.first();
-        if (!role) {
-            await message.reply({
-                embeds: [
-                    {
-                        title: '⚠️ Missing Information',
-                        description: 'Please mention the role to check registrations from.',
-                        fields: [
-                            {
-                                name: 'Usage',
-                                value: '`!albiongw checkregistrations @role`',
-                                inline: true
-                            },
-                            {
-                                name: 'Example',
-                                value: '`!albiongw checkregistrations @Members`',
-                                inline: true
-                            }
-                        ],
-                        color: Colors.Yellow,
-                        timestamp: new Date().toISOString()
-                    }
-                ]
-            });
-            return;
-        }
-
         try {
+            const isSlash = message.commandName === 'checkregistrations';
+            const role = isSlash ? 
+                message.options.getRole('role') : 
+                message.mentions.roles.first();
+
+            if (!role) {
+                const errorEmbed = new EmbedBuilder()
+                    .setTitle('⚠️ Missing Information')
+                    .setDescription('Please mention the role to check registrations from.')
+                    .addFields([
+                        {
+                            name: 'Usage',
+                            value: isSlash ? 
+                                '`/checkregistrations role:@role`' : 
+                                '`!albiongw checkregistrations @role`'
+                        },
+                        {
+                            name: 'Example',
+                            value: isSlash ? 
+                                '`/checkregistrations role:@Members`' : 
+                                '`!albiongw checkregistrations @Members`'
+                        }
+                    ])
+                    .setColor(Colors.Yellow)
+                    .setTimestamp();
+
+                await message.reply({
+                    embeds: [errorEmbed],
+                    ephemeral: isSlash
+                });
+                return;
+            }
+
             // Get all members with the specified role
             const members = role.members;
 
@@ -47,7 +52,8 @@ module.exports = new Command({
                 where: {
                     userId: {
                         in: [...members.keys()]
-                    }
+                    },
+                    guildId: message.guildId
                 }
             });
 
@@ -58,58 +64,87 @@ module.exports = new Command({
             );
 
             if (unregisteredMembers.length === 0) {
+                const successEmbed = new EmbedBuilder()
+                    .setTitle('✅ All Members Registered')
+                    .setDescription(`All members with the ${role.name} role are registered!`)
+                    .setColor(Colors.Green)
+                    .setTimestamp();
+
                 await message.reply({
-                    embeds: [
-                        {
-                            title: '✅ All Members Registered',
-                            description: `All members with the ${role.name} role are registered!`,
-                            color: Colors.Green,
-                            timestamp: new Date().toISOString()
-                        }
-                    ]
+                    embeds: [successEmbed],
+                    ephemeral: isSlash
                 });
                 return;
             }
 
-            // Create mention list and message
-            const mentions = unregisteredMembers.map(member => member.toString()).join('\n');
+            // Split members into chunks if the list is too long
+            const CHUNK_SIZE = 1024; // Discord's field value limit
+            const memberChunks = [];
+            let currentChunk = '';
+
+            for (const member of unregisteredMembers) {
+                const memberMention = member.toString();
+                if (currentChunk.length + memberMention.length + 1 > CHUNK_SIZE) {
+                    memberChunks.push(currentChunk);
+                    currentChunk = memberMention;
+                } else {
+                    currentChunk += (currentChunk ? '\n' : '') + memberMention;
+                }
+            }
+            if (currentChunk) {
+                memberChunks.push(currentChunk);
+            }
+
+            const resultEmbed = new EmbedBuilder()
+                .setTitle('⚠️ Unregistered Members Found')
+                .setDescription(`The following members in ${role.name} are not registered:`)
+                .setColor(Colors.Yellow)
+                .setTimestamp()
+                .setFooter({
+                    text: `Total unregistered: ${unregisteredMembers.length}`
+                });
+
+            // Add member chunks as separate fields
+            memberChunks.forEach((chunk, index) => {
+                resultEmbed.addFields({
+                    name: index === 0 ? 'Members' : '\u200B',
+                    value: chunk,
+                    inline: false
+                });
+            });
+
+            // Add registration instructions
+            resultEmbed.addFields({
+                name: 'How to Register',
+                value: [
+                    'Use `/register` with the following options:',
+                    '• `region`: america, europe, or asia',
+                    '• `character`: Your Albion Online character name',
+                    '',
+                    'Example: `/register region:america character:PlayerName`'
+                ].join('\n'),
+                inline: false
+            });
+
             await message.reply({
-                embeds: [
-                    {
-                        title: '⚠️ Unregistered Members Found',
-                        description: `The following members in ${role.name} are not registered:`,
-                        fields: [
-                            {
-                                name: 'Members',
-                                value: mentions,
-                                inline: false
-                            },
-                            {
-                                name: 'How to Register',
-                                value: 'Use `/register region:america nickname:YourNick` to register your character.\nAvailable regions: america, europe, asia',
-                                inline: false
-                            }
-                        ],
-                        color: Colors.Yellow,
-                        timestamp: new Date().toISOString(),
-                        footer: {
-                            text: `Total unregistered: ${unregisteredMembers.length}`
-                        }
-                    }
-                ]
+                embeds: [resultEmbed],
+                ephemeral: isSlash
             });
 
         } catch (error) {
             console.error('Error checking registrations:', error);
+            const errorEmbed = new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription('An error occurred while checking registrations.')
+                .setColor(Colors.Red)
+                .setTimestamp()
+                .setFooter({
+                    text: `Attempted by ${isSlash ? message.user.tag : message.author.tag}`
+                });
+
             await message.reply({
-                embeds: [
-                    {
-                        title: '❌ Error',
-                        description: 'An error occurred while checking registrations.',
-                        color: Colors.Red,
-                        timestamp: new Date().toISOString()
-                    }
-                ]
+                embeds: [errorEmbed],
+                ephemeral: isSlash
             });
         }
     }
