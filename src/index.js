@@ -53,6 +53,10 @@ client.once('ready', async () => {
   logger.info(`Bot logged in`, { username: client.user.tag });
   
   try {
+    // Check for missed aggregations first
+    logger.info('Checking for missed aggregations...');
+    await activityAggregator.checkMissedAggregations();
+
     // Register slash commands
     await registerSlashCommands(client);
 

@@ -229,10 +229,10 @@ module.exports = new Command({
                             const activity = stats.find(s => s.userId === member.id);
                             const afkTime = activity?.afkTimeSeconds || 0;
                             const totalVoiceTime = activity?.voiceTimeSeconds || 0;
-                            const mutedTime = totalVoiceTime - activeTime - afkTime;
+                            const mutedTime = activity?.mutedDeafenedTimeSeconds || 0;
                             
-                            const details = activeTime > 0 || afkTime > 0 || mutedTime > 0
-                                ? `Voice: \`${formatDuration(activeTime)}\` (${activePercentage}% of top avg) • AFK: \`${formatDuration(afkTime)}\` • Muted: \`${formatDuration(mutedTime)}\` • Messages: \`${messageCount}\``
+                            const details = totalVoiceTime > 0 || afkTime > 0 || mutedTime > 0
+                                ? `Voice: \`${formatDuration(totalVoiceTime)}\` (${activePercentage}% of top avg) • AFK: \`${formatDuration(afkTime)}\` • Muted: \`${formatDuration(mutedTime)}\` • Messages: \`${messageCount}\``
                                 : '`No activity recorded`';
                             return `🔴 ${member.toString()} - ${details}`;
                         }).join('\n')

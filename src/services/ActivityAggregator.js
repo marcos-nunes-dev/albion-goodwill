@@ -9,8 +9,44 @@ class ActivityAggregator {
     this.ACTIVITY_THRESHOLD = 0.05; // 5%
   }
 
-  async aggregateWeeklyStats() {
-    const weekStart = getWeekStart(new Date());
+  async checkMissedAggregations() {
+    const now = new Date();
+    
+    // Check for missed weekly aggregation
+    const currentWeekStart = getWeekStart(now);
+    const lastWeekStart = new Date(currentWeekStart);
+    lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+
+    const weeklyStats = await prisma.weeklyActivity.findFirst({
+      where: {
+        weekStart: lastWeekStart
+      }
+    });
+
+    if (!weeklyStats) {
+      logger.info('Found missed weekly aggregation, running now...', { weekStart: lastWeekStart });
+      await this.aggregateWeeklyStats(lastWeekStart);
+    }
+
+    // Check for missed monthly aggregation
+    const currentMonthStart = getMonthStart(now);
+    const lastMonthStart = new Date(currentMonthStart);
+    lastMonthStart.setMonth(lastMonthStart.getMonth() - 1);
+
+    const monthlyStats = await prisma.monthlyActivity.findFirst({
+      where: {
+        monthStart: lastMonthStart
+      }
+    });
+
+    if (!monthlyStats) {
+      logger.info('Found missed monthly aggregation, running now...', { monthStart: lastMonthStart });
+      await this.aggregateMonthlyStats(lastMonthStart);
+    }
+  }
+
+  async aggregateWeeklyStats(targetWeekStart = null) {
+    const weekStart = targetWeekStart || getWeekStart(new Date());
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekEnd.getDate() + 7);
 
@@ -93,12 +129,12 @@ class ActivityAggregator {
     }
   }
 
-  async aggregateMonthlyStats() {
-    const monthStart = getMonthStart(new Date());
+  async aggregateMonthlyStats(targetMonthStart = null) {
+    const monthStart = targetMonthStart || getMonthStart(new Date());
     const monthEnd = new Date(monthStart);
     monthEnd.setMonth(monthEnd.getMonth() + 1);
 
-    console.log('Aggregating monthly stats:', {
+    logger.info('Aggregating monthly stats:', {
       monthStart: monthStart.toISOString(),
       monthEnd: monthEnd.toISOString()
     });
@@ -121,7 +157,7 @@ class ActivityAggregator {
         }
       });
 
-      console.log(`Found ${dailyStats.length} users with activity this month`);
+      logger.info(`Found ${dailyStats.length} users with activity this month`);
 
       for (const stat of dailyStats) {
         await prisma.monthlyActivity.upsert({
@@ -151,9 +187,9 @@ class ActivityAggregator {
         });
       }
 
-      console.log('Monthly aggregation completed successfully');
+      logger.info('Monthly aggregation completed successfully');
     } catch (error) {
-      console.error('Error during monthly aggregation:', error);
+      logger.error('Monthly aggregation failed', { error: error.message });
     }
   }
 }
