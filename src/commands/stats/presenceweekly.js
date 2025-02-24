@@ -57,7 +57,7 @@ module.exports = new Command({
                     stats = dailyStats.reduce((acc, curr) => ({
                         voiceTimeSeconds: (acc.voiceTimeSeconds || 0) + curr.voiceTimeSeconds,
                         afkTimeSeconds: (acc.afkTimeSeconds || 0) + curr.afkTimeSeconds,
-                        mutedTimeSeconds: (acc.mutedTimeSeconds || 0) + curr.mutedTimeSeconds,
+                        mutedDeafenedTimeSeconds: (acc.mutedDeafenedTimeSeconds || 0) + curr.mutedDeafenedTimeSeconds,
                         messageCount: (acc.messageCount || 0) + curr.messageCount
                     }), {});
                 }
@@ -82,9 +82,11 @@ module.exports = new Command({
 
             // Calculate percentages
             const totalTime = stats.voiceTimeSeconds;
-            const activeTime = stats.voiceTimeSeconds - stats.afkTimeSeconds;
+            const mutedTime = stats.mutedDeafenedTimeSeconds || 0;
+            const afkTime = stats.afkTimeSeconds;
+            const activeTime = totalTime - afkTime - mutedTime;
             const activePercentage = totalTime > 0 ? Math.round((activeTime / totalTime) * 100) : 0;
-            const afkPercentage = totalTime > 0 ? Math.round((stats.afkTimeSeconds / totalTime) * 100) : 0;
+            const afkPercentage = totalTime > 0 ? Math.round((afkTime / totalTime) * 100) : 0;
 
             // Create progress bar for active/AFK ratio
             const progressBarLength = 20;
@@ -105,10 +107,10 @@ module.exports = new Command({
                     {
                         name: '🎤 Voice Activity',
                         value: [
-                            `Total Time: \`${formatDuration(stats.voiceTimeSeconds)}\``,
+                            `Total Time: \`${formatDuration(totalTime)}\``,
                             `Active Time: \`${formatDuration(activeTime)}\``,
-                            `AFK Time: \`${formatDuration(stats.afkTimeSeconds)}\``,
-                            `Muted Time: \`${formatDuration(stats.mutedTimeSeconds || 0)}\``,
+                            `AFK Time: \`${formatDuration(afkTime)}\``,
+                            `Muted Time: \`${formatDuration(mutedTime)}\``,
                         ].join('\n'),
                         inline: true
                     },
