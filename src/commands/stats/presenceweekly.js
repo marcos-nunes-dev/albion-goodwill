@@ -24,7 +24,8 @@ module.exports = new Command({
             const weekStart = getWeekStart(new Date());
             const member = await message.guild.members.fetch(targetUser.id);
 
-            const stats = await prisma.weeklyActivity.findUnique({
+            // First try to get weekly aggregated stats
+            let stats = await prisma.weeklyActivity.findUnique({
                 where: {
                     userId_guildId_weekStart: {
                         userId: targetUser.id,
@@ -34,6 +35,34 @@ module.exports = new Command({
                 }
             });
 
+            let isPartialData = false;
+            // If no weekly stats, aggregate from daily data
+            if (!stats) {
+                const nextWeek = new Date(weekStart);
+                nextWeek.setDate(nextWeek.getDate() + 7);
+
+                const dailyStats = await prisma.dailyActivity.findMany({
+                    where: {
+                        userId: targetUser.id,
+                        guildId: message.guild.id,
+                        date: {
+                            gte: weekStart,
+                            lt: nextWeek
+                        }
+                    }
+                });
+
+                if (dailyStats.length > 0) {
+                    isPartialData = true;
+                    stats = dailyStats.reduce((acc, curr) => ({
+                        voiceTimeSeconds: (acc.voiceTimeSeconds || 0) + curr.voiceTimeSeconds,
+                        afkTimeSeconds: (acc.afkTimeSeconds || 0) + curr.afkTimeSeconds,
+                        mutedTimeSeconds: (acc.mutedTimeSeconds || 0) + curr.mutedTimeSeconds,
+                        messageCount: (acc.messageCount || 0) + curr.messageCount
+                    }), {});
+                }
+            }
+
             if (!stats) {
                 const noStatsEmbed = new EmbedBuilder()
                     .setColor(0xFF0000)
@@ -41,7 +70,7 @@ module.exports = new Command({
                         name: member.displayName,
                         iconURL: targetUser.displayAvatarURL({ dynamic: true })
                     })
-                    .setDescription('❌ No activity recorded this week. Or we just have partial data.')
+                    .setDescription('❌ No activity recorded this week.')
                     .setFooter({ text: 'Try joining a voice channel or sending messages!' });
 
                 await message.reply({ 
@@ -68,7 +97,10 @@ module.exports = new Command({
                     name: `${member.displayName}'s Weekly Activity`,
                     iconURL: targetUser.displayAvatarURL({ dynamic: true })
                 })
-                .setDescription(`Activity stats for week starting <t:${Math.floor(weekStart.getTime() / 1000)}:D>`)
+                .setDescription([
+                    `Activity stats for week starting <t:${Math.floor(weekStart.getTime() / 1000)}:D>`,
+                    isPartialData ? '⚠️ **Note:** This is partial data aggregated from available daily records.' : ''
+                ].filter(Boolean).join('\n'))
                 .addFields(
                     {
                         name: '🎤 Voice Activity',

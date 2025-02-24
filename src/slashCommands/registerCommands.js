@@ -36,7 +36,7 @@ const commands = [
         ),
     new SlashCommandBuilder()
         .setName('competitors')
-        .setDescription('Manage competitors in the tournament')
+        .setDescription('Manage competitors to compare your guild against it')
         .addStringOption(option =>
             option.setName('action')
                 .setDescription('Action to perform (add/remove/list)')

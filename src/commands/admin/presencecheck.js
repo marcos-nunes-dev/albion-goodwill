@@ -226,8 +226,13 @@ module.exports = new Command({
                     .setTitle(`Inactive Members (Page ${page + 1}/${pages})`)
                     .setDescription(
                         pageMembers.map(({ member, activeTime, activePercentage, messageCount }) => {
-                            const details = activeTime > 0
-                                ? `Voice: \`${formatDuration(activeTime)}\` (${activePercentage}% of top avg) • Messages: \`${messageCount}\``
+                            const activity = stats.find(s => s.userId === member.id);
+                            const afkTime = activity?.afkTimeSeconds || 0;
+                            const totalVoiceTime = activity?.voiceTimeSeconds || 0;
+                            const mutedTime = totalVoiceTime - activeTime - afkTime;
+                            
+                            const details = activeTime > 0 || afkTime > 0 || mutedTime > 0
+                                ? `Voice: \`${formatDuration(activeTime)}\` (${activePercentage}% of top avg) • AFK: \`${formatDuration(afkTime)}\` • Muted: \`${formatDuration(mutedTime)}\` • Messages: \`${messageCount}\``
                                 : '`No activity recorded`';
                             return `🔴 ${member.toString()} - ${details}`;
                         }).join('\n')

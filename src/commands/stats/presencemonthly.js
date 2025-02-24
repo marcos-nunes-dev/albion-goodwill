@@ -24,7 +24,8 @@ module.exports = new Command({
             const monthStart = getMonthStart(new Date());
             const member = await message.guild.members.fetch(targetUser.id);
 
-            const stats = await prisma.monthlyActivity.findUnique({
+            // First try to get monthly aggregated stats
+            let stats = await prisma.monthlyActivity.findUnique({
                 where: {
                     userId_guildId_monthStart: {
                         userId: targetUser.id,
@@ -34,6 +35,57 @@ module.exports = new Command({
                 }
             });
 
+            let isPartialData = false;
+            // If no monthly stats, try weekly data first
+            if (!stats) {
+                const nextMonth = new Date(monthStart);
+                nextMonth.setMonth(nextMonth.getMonth() + 1);
+
+                // Try to get weekly data first
+                const weeklyStats = await prisma.weeklyActivity.findMany({
+                    where: {
+                        userId: targetUser.id,
+                        guildId: message.guild.id,
+                        weekStart: {
+                            gte: monthStart,
+                            lt: nextMonth
+                        }
+                    }
+                });
+
+                if (weeklyStats.length > 0) {
+                    isPartialData = true;
+                    stats = weeklyStats.reduce((acc, curr) => ({
+                        voiceTimeSeconds: (acc.voiceTimeSeconds || 0) + curr.voiceTimeSeconds,
+                        afkTimeSeconds: (acc.afkTimeSeconds || 0) + curr.afkTimeSeconds,
+                        mutedTimeSeconds: (acc.mutedTimeSeconds || 0) + curr.mutedTimeSeconds,
+                        messageCount: (acc.messageCount || 0) + curr.messageCount
+                    }), {});
+                } else {
+                    // If no weekly data, try daily data
+                    const dailyStats = await prisma.dailyActivity.findMany({
+                        where: {
+                            userId: targetUser.id,
+                            guildId: message.guild.id,
+                            date: {
+                                gte: monthStart,
+                                lt: nextMonth
+                            }
+                        }
+                    });
+
+                    if (dailyStats.length > 0) {
+                        isPartialData = true;
+                        stats = dailyStats.reduce((acc, curr) => ({
+                            voiceTimeSeconds: (acc.voiceTimeSeconds || 0) + curr.voiceTimeSeconds,
+                            afkTimeSeconds: (acc.afkTimeSeconds || 0) + curr.afkTimeSeconds,
+                            mutedTimeSeconds: (acc.mutedTimeSeconds || 0) + curr.mutedTimeSeconds,
+                            messageCount: (acc.messageCount || 0) + curr.messageCount
+                        }), {});
+                    }
+                }
+            }
+
             if (!stats) {
                 const noStatsEmbed = new EmbedBuilder()
                     .setColor(0xFF0000)
@@ -41,7 +93,7 @@ module.exports = new Command({
                         name: member.displayName,
                         iconURL: targetUser.displayAvatarURL({ dynamic: true })
                     })
-                    .setDescription('❌ No activity recorded this month. Or we just have partial data.')
+                    .setDescription('❌ No activity recorded this month.')
                     .setFooter({ text: 'Try joining a voice channel or sending messages!' });
 
                 await message.reply({ 
@@ -68,7 +120,10 @@ module.exports = new Command({
                     name: `${member.displayName}'s Monthly Activity`,
                     iconURL: targetUser.displayAvatarURL({ dynamic: true })
                 })
-                .setDescription(`Activity stats for month starting <t:${Math.floor(monthStart.getTime() / 1000)}:D>`)
+                .setDescription([
+                    `Activity stats for month starting <t:${Math.floor(monthStart.getTime() / 1000)}:D>`,
+                    isPartialData ? '⚠️ **Note:** This is partial data aggregated from available weekly/daily records.' : ''
+                ].filter(Boolean).join('\n'))
                 .addFields(
                     {
                         name: '🎤 Voice Activity',
