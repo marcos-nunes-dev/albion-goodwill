@@ -24,30 +24,29 @@ module.exports = new Command({
             const weekStart = getWeekStart(new Date());
             const member = await message.guild.members.fetch(targetUser.id);
 
-            // First try to get weekly aggregated stats
+            // Try to get weekly stats first
             let stats = await prisma.weeklyActivity.findUnique({
                 where: {
                     userId_guildId_weekStart: {
                         userId: targetUser.id,
                         guildId: message.guild.id,
-                        weekStart
+                        weekStart: weekStart
                     }
                 }
             });
 
             let isPartialData = false;
-            // If no weekly stats, aggregate from daily data
-            if (!stats) {
-                const nextWeek = new Date(weekStart);
-                nextWeek.setDate(nextWeek.getDate() + 7);
+            let dailyStats = [];
 
-                const dailyStats = await prisma.dailyActivity.findMany({
+            // If no weekly stats, try daily data
+            if (!stats) {
+                dailyStats = await prisma.dailyActivity.findMany({
                     where: {
                         userId: targetUser.id,
                         guildId: message.guild.id,
                         date: {
                             gte: weekStart,
-                            lt: nextWeek
+                            lt: new Date(weekStart.getTime() + 604800000)
                         }
                     }
                 });
@@ -60,6 +59,33 @@ module.exports = new Command({
                         mutedDeafenedTimeSeconds: (acc.mutedDeafenedTimeSeconds || 0) + curr.mutedDeafenedTimeSeconds,
                         messageCount: (acc.messageCount || 0) + curr.messageCount
                     }), {});
+                }
+            } else {
+                // Try to supplement weekly data with any additional daily data
+                dailyStats = await prisma.dailyActivity.findMany({
+                    where: {
+                        userId: targetUser.id,
+                        guildId: message.guild.id,
+                        date: {
+                            gte: weekStart,
+                            lt: new Date(weekStart.getTime() + 604800000)
+                        }
+                    }
+                });
+
+                if (dailyStats.length > 0) {
+                    const dailyTotal = dailyStats.reduce((acc, curr) => ({
+                        voiceTimeSeconds: (acc.voiceTimeSeconds || 0) + curr.voiceTimeSeconds,
+                        afkTimeSeconds: (acc.afkTimeSeconds || 0) + curr.afkTimeSeconds,
+                        mutedDeafenedTimeSeconds: (acc.mutedDeafenedTimeSeconds || 0) + curr.mutedDeafenedTimeSeconds,
+                        messageCount: (acc.messageCount || 0) + curr.messageCount
+                    }), {});
+
+                    // If daily total is greater than weekly, use it instead
+                    if (dailyTotal.voiceTimeSeconds > stats.voiceTimeSeconds) {
+                        isPartialData = true;
+                        stats = dailyTotal;
+                    }
                 }
             }
 

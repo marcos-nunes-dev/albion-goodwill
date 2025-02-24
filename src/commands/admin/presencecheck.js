@@ -56,6 +56,7 @@ module.exports = new Command({
             let table;
             let dateField;
             let stats = [];
+            let isPartialData = false;
 
             switch (normalizedPeriod) {
                 case 'daily':
@@ -99,61 +100,104 @@ module.exports = new Command({
                 }
             });
 
-            // If no monthly stats found, aggregate from daily data
-            if (stats.length === 0 && normalizedPeriod === 'monthly') {
-                const monthStart = getMonthStart(new Date());
-                const nextMonth = new Date(monthStart);
-                nextMonth.setMonth(nextMonth.getMonth() + 1);
+            // For weekly and monthly periods, try to aggregate missing data
+            if (normalizedPeriod !== 'daily') {
+                let additionalStats = [];
+                const periodStart = normalizedPeriod === 'weekly' ? getWeekStart(new Date()) : getMonthStart(new Date());
+                const nextPeriod = new Date(periodStart);
+                if (normalizedPeriod === 'weekly') {
+                    nextPeriod.setDate(nextPeriod.getDate() + 7);
+                } else {
+                    nextPeriod.setMonth(nextPeriod.getMonth() + 1);
+                }
 
-                stats = await prisma.dailyActivity.groupBy({
-                    by: ['userId'],
-                    where: {
-                        guildId: message.guild.id,
-                        userId: {
-                            in: [...members.keys()]
-                        },
-                        date: {
-                            gte: monthStart,
-                            lt: nextMonth
+                // For monthly, try weekly data first
+                if (normalizedPeriod === 'monthly') {
+                    const weeklyStats = await prisma.weeklyActivity.findMany({
+                        where: {
+                            guildId: message.guild.id,
+                            userId: {
+                                in: [...members.keys()]
+                            },
+                            weekStart: {
+                                gte: periodStart,
+                                lt: nextPeriod
+                            }
                         }
-                    },
-                    _sum: {
-                        voiceTimeSeconds: true,
-                        afkTimeSeconds: true,
-                        messageCount: true
+                    });
+
+                    if (weeklyStats.length > 0) {
+                        isPartialData = true;
+                        additionalStats = weeklyStats;
                     }
-                });
+                }
 
-                // Transform grouped data to match regular stats format
-                stats = stats.map(stat => ({
-                    userId: stat.userId,
-                    voiceTimeSeconds: stat._sum.voiceTimeSeconds || 0,
-                    afkTimeSeconds: stat._sum.afkTimeSeconds || 0,
-                    messageCount: stat._sum.messageCount || 0
-                }));
+                // If still no data (or for weekly period), try daily data
+                if (additionalStats.length === 0) {
+                    const dailyStats = await prisma.dailyActivity.findMany({
+                        where: {
+                            guildId: message.guild.id,
+                            userId: {
+                                in: [...members.keys()]
+                            },
+                            date: {
+                                gte: periodStart,
+                                lt: nextPeriod
+                            }
+                        }
+                    });
+
+                    if (dailyStats.length > 0) {
+                        isPartialData = true;
+                        additionalStats = dailyStats;
+                    }
+                }
+
+                // Merge additional stats with existing stats
+                if (additionalStats.length > 0) {
+                    const mergedStats = new Map();
+                    
+                    // Process existing stats
+                    stats.forEach(stat => {
+                        mergedStats.set(stat.userId, {
+                            userId: stat.userId,
+                            voiceTimeSeconds: stat.voiceTimeSeconds || 0,
+                            afkTimeSeconds: stat.afkTimeSeconds || 0,
+                            mutedDeafenedTimeSeconds: stat.mutedDeafenedTimeSeconds || 0,
+                            messageCount: stat.messageCount || 0
+                        });
+                    });
+
+                    // Add or merge additional stats
+                    additionalStats.forEach(stat => {
+                        const existing = mergedStats.get(stat.userId) || {
+                            userId: stat.userId,
+                            voiceTimeSeconds: 0,
+                            afkTimeSeconds: 0,
+                            mutedDeafenedTimeSeconds: 0,
+                            messageCount: 0
+                        };
+
+                        mergedStats.set(stat.userId, {
+                            userId: stat.userId,
+                            voiceTimeSeconds: existing.voiceTimeSeconds + (stat.voiceTimeSeconds || 0),
+                            afkTimeSeconds: existing.afkTimeSeconds + (stat.afkTimeSeconds || 0),
+                            mutedDeafenedTimeSeconds: existing.mutedDeafenedTimeSeconds + (stat.mutedDeafenedTimeSeconds || 0),
+                            messageCount: existing.messageCount + (stat.messageCount || 0)
+                        });
+                    });
+
+                    stats = Array.from(mergedStats.values());
+                }
             }
-
-            // Calculate top 10 average activity
-            const sortedStats = [...stats].sort((a, b) => {
-                const activeTimeA = a.voiceTimeSeconds - a.afkTimeSeconds;
-                const activeTimeB = b.voiceTimeSeconds - b.afkTimeSeconds;
-                return activeTimeB - activeTimeA;
-            });
-
-            const top10Stats = sortedStats.slice(0, 10);
-            const top10Average = top10Stats.length > 0 
-                ? top10Stats.reduce((sum, stat) => {
-                    return sum + (stat.voiceTimeSeconds - stat.afkTimeSeconds);
-                }, 0) / top10Stats.length
-                : 0;
-
-            const activityThreshold = top10Average * (ACTIVITY_THRESHOLD_PERCENTAGE / 100);
 
             // Process and identify inactive members
             const memberActivities = [...members.values()].map(member => {
                 const activity = stats.find(s => s.userId === member.id);
                 const totalTime = activity?.voiceTimeSeconds || 0;
-                const activeTime = activity ? (activity.voiceTimeSeconds - activity.afkTimeSeconds) : 0;
+                const afkTime = activity?.afkTimeSeconds || 0;
+                const mutedTime = activity?.mutedDeafenedTimeSeconds || 0;
+                const activeTime = totalTime - afkTime - mutedTime;
                 const activePercentage = top10Average > 0 
                     ? Math.round((activeTime / top10Average) * 100) 
                     : 0;
@@ -167,6 +211,22 @@ module.exports = new Command({
                     messageCount: activity?.messageCount || 0
                 };
             });
+
+            // Calculate top 10 average activity
+            const sortedStats = [...stats].sort((a, b) => {
+                const activeTimeA = a.voiceTimeSeconds - a.afkTimeSeconds - a.mutedDeafenedTimeSeconds;
+                const activeTimeB = b.voiceTimeSeconds - b.afkTimeSeconds - b.mutedDeafenedTimeSeconds;
+                return activeTimeB - activeTimeA;
+            });
+
+            const top10Stats = sortedStats.slice(0, 10);
+            const top10Average = top10Stats.length > 0 
+                ? top10Stats.reduce((sum, stat) => {
+                    return sum + (stat.voiceTimeSeconds - stat.afkTimeSeconds - stat.mutedDeafenedTimeSeconds);
+                }, 0) / top10Stats.length
+                : 0;
+
+            const activityThreshold = top10Average * (ACTIVITY_THRESHOLD_PERCENTAGE / 100);
 
             // Filter only inactive members and sort by activity percentage
             const inactiveMembers = memberActivities
@@ -224,19 +284,19 @@ module.exports = new Command({
                 return new EmbedBuilder()
                     .setColor(0xFF0000)
                     .setTitle(`Inactive Members (Page ${page + 1}/${pages})`)
-                    .setDescription(
+                    .setDescription([
+                        isPartialData ? '⚠️ **Note:** Some data is aggregated from daily/weekly records.' : '',
                         pageMembers.map(({ member, activeTime, activePercentage, messageCount }) => {
                             const activity = stats.find(s => s.userId === member.id);
                             const afkTime = activity?.afkTimeSeconds || 0;
-                            const totalVoiceTime = activity?.voiceTimeSeconds || 0;
                             const mutedTime = activity?.mutedDeafenedTimeSeconds || 0;
-                            
-                            const details = totalVoiceTime > 0 || afkTime > 0 || mutedTime > 0
-                                ? `Voice: \`${formatDuration(totalVoiceTime)}\` (${activePercentage}% of top avg) • AFK: \`${formatDuration(afkTime)}\` • Muted: \`${formatDuration(mutedTime)}\` • Messages: \`${messageCount}\``
+                            const totalTime = activity?.voiceTimeSeconds || 0;
+                            const details = totalTime > 0 || afkTime > 0 || mutedTime > 0
+                                ? `Voice: \`${formatDuration(totalTime)}\` (${activePercentage}% of top avg) • AFK: \`${formatDuration(afkTime)}\` • Muted: \`${formatDuration(mutedTime)}\` • Messages: \`${messageCount}\``
                                 : '`No activity recorded`';
                             return `🔴 ${member.toString()} - ${details}`;
                         }).join('\n')
-                    )
+                    ])
                     .setFooter({ 
                         text: `Required Active Time: ${formatDuration(activityThreshold)} • Total inactive: ${inactiveMembers.length}` 
                     });

@@ -22,9 +22,11 @@ module.exports = new Command({
             }
 
             const monthStart = getMonthStart(new Date());
+            const nextMonth = new Date(monthStart);
+            nextMonth.setMonth(nextMonth.getMonth() + 1);
             const member = await message.guild.members.fetch(targetUser.id);
 
-            // First try to get monthly aggregated stats
+            // Try to get monthly stats first
             let stats = await prisma.monthlyActivity.findUnique({
                 where: {
                     userId_guildId_monthStart: {
@@ -36,12 +38,9 @@ module.exports = new Command({
             });
 
             let isPartialData = false;
-            // If no monthly stats, try weekly data first
-            if (!stats) {
-                const nextMonth = new Date(monthStart);
-                nextMonth.setMonth(nextMonth.getMonth() + 1);
 
-                // Try to get weekly data first
+            if (!stats) {
+                // Try weekly data first
                 const weeklyStats = await prisma.weeklyActivity.findMany({
                     where: {
                         userId: targetUser.id,
@@ -83,6 +82,54 @@ module.exports = new Command({
                             messageCount: (acc.messageCount || 0) + curr.messageCount
                         }), {});
                     }
+                }
+            } else {
+                // Try to supplement monthly data with any additional weekly/daily data
+                const weeklyStats = await prisma.weeklyActivity.findMany({
+                    where: {
+                        userId: targetUser.id,
+                        guildId: message.guild.id,
+                        weekStart: {
+                            gte: monthStart,
+                            lt: nextMonth
+                        }
+                    }
+                });
+
+                const dailyStats = await prisma.dailyActivity.findMany({
+                    where: {
+                        userId: targetUser.id,
+                        guildId: message.guild.id,
+                        date: {
+                            gte: monthStart,
+                            lt: nextMonth
+                        }
+                    }
+                });
+
+                // Calculate totals from weekly and daily data
+                let weeklyTotal = weeklyStats.length > 0 ? weeklyStats.reduce((acc, curr) => ({
+                    voiceTimeSeconds: (acc.voiceTimeSeconds || 0) + curr.voiceTimeSeconds,
+                    afkTimeSeconds: (acc.afkTimeSeconds || 0) + curr.afkTimeSeconds,
+                    mutedDeafenedTimeSeconds: (acc.mutedDeafenedTimeSeconds || 0) + curr.mutedDeafenedTimeSeconds,
+                    messageCount: (acc.messageCount || 0) + curr.messageCount
+                }), {}) : null;
+
+                let dailyTotal = dailyStats.length > 0 ? dailyStats.reduce((acc, curr) => ({
+                    voiceTimeSeconds: (acc.voiceTimeSeconds || 0) + curr.voiceTimeSeconds,
+                    afkTimeSeconds: (acc.afkTimeSeconds || 0) + curr.afkTimeSeconds,
+                    mutedDeafenedTimeSeconds: (acc.mutedDeafenedTimeSeconds || 0) + curr.mutedDeafenedTimeSeconds,
+                    messageCount: (acc.messageCount || 0) + curr.messageCount
+                }), {}) : null;
+
+                // Use the highest total if it's greater than monthly stats
+                if (weeklyTotal && weeklyTotal.voiceTimeSeconds > stats.voiceTimeSeconds) {
+                    isPartialData = true;
+                    stats = weeklyTotal;
+                }
+                if (dailyTotal && dailyTotal.voiceTimeSeconds > stats.voiceTimeSeconds) {
+                    isPartialData = true;
+                    stats = dailyTotal;
                 }
             }
 
