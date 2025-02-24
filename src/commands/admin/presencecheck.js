@@ -51,7 +51,7 @@ module.exports = new Command({
                 return;
             }
 
-            // Get the appropriate date and table based on period
+            // Get the appropriate date and table based on period 
             let date;
             let table;
             let dateField;
