@@ -196,9 +196,9 @@ module.exports = new Command({
                 }).join('\n\n');
 
                 const totalMembers = role.members.size;
-                const activeCount = activityData.filter(d => (d.stats?.voiceTimeSeconds || 0) >= minimumThreshold).length;
+                const activeCount = activeMemberStats.length;
                 const noDataCount = memberStats.filter(m => !m.hasData).length;
-                const inactiveCount = memberStats.length - noDataCount;
+                const inactiveCount = inactiveMemberStats.filter(m => m.hasData).length;
 
                 return new EmbedBuilder()
                     .setTitle(`${title} - ${role.name}`)
