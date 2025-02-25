@@ -1,40 +1,37 @@
 const { EmbedBuilder } = require('discord.js');
 const Command = require('../../structures/Command');
-const prisma = require('../../config/prisma');
 const { formatDuration } = require('../../utils/timeUtils');
-const { calculateActivityStats } = require('../../utils/activityUtils');
+const { calculateActivityStats, fetchActivityData } = require('../../utils/activityUtils');
 
 module.exports = new Command({
     name: 'presencedaily',
-    description: 'Shows daily presence stats for a user',
-    category: 'stats',
-    usage: '[@user]',
-    cooldown: 5,
-    async execute(message, args, handler) {
+    description: 'Check daily activity stats for a user',
+    defaultMemberPermissions: null,
+    options: [
+        {
+            name: 'user',
+            description: 'User to check stats for (defaults to you)',
+            type: 6,
+            required: false
+        }
+    ],
+    async execute(message, args, isSlash = false) {
         try {
-            const isSlash = message.commandName === 'presencedaily';
-            
-            // Get target user based on command type
-            let targetUser;
-            if (isSlash) {
-                targetUser = message.options.getUser('user') || message.user;
-            } else {
-                targetUser = message.mentions.users.first() || message.author;
-            }
+            // Handle both slash commands and regular commands
+            const targetUser = isSlash ? 
+                (message.options.getUser('user') || message.user) : 
+                (args?.user || message.author);
 
+            const member = await message.guild.members.fetch(targetUser.id);
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
-            const member = await message.guild.members.fetch(targetUser.id);
-
-            const stats = await prisma.dailyActivity.findUnique({
-                where: {
-                    userId_guildId_date: {
-                        userId: targetUser.id,
-                        guildId: message.guild.id,
-                        date: today
-                    }
-                }
+            // Fetch activity data
+            const { data: stats } = await fetchActivityData({
+                userId: targetUser.id,
+                guildId: message.guild.id,
+                period: 'daily',
+                startDate: today
             });
 
             if (!stats) {
@@ -47,74 +44,57 @@ module.exports = new Command({
                     .setDescription('❌ No activity recorded today.')
                     .setFooter({ text: 'Try joining a voice channel or sending messages!' });
 
-                await message.reply({ 
-                    embeds: [noStatsEmbed],
-                    ephemeral: isSlash
-                });
+                const reply = { embeds: [noStatsEmbed] };
+                if (isSlash) {
+                    reply.flags = 64; // Ephemeral flag
+                }
+                await message.reply(reply);
                 return;
             }
 
             // Calculate activity stats
             const activityStats = calculateActivityStats(stats);
 
-            // Create progress bar for active/AFK ratio
-            const progressBarLength = 20;
-            const activeBlocks = Math.round((activityStats.activePercentage / 100) * progressBarLength);
-            const progressBar = '█'.repeat(activeBlocks) + '░'.repeat(progressBarLength - activeBlocks);
-
+            // Create embed
             const embed = new EmbedBuilder()
-                .setColor(0x0099FF)
+                .setColor(0x00FF00)
                 .setAuthor({
                     name: `${member.displayName}'s Daily Activity`,
                     iconURL: targetUser.displayAvatarURL({ dynamic: true })
                 })
-                .setDescription(`Activity stats for <t:${Math.floor(today.getTime() / 1000)}:D>`)
                 .addFields(
-                    {
-                        name: '🎤 Voice Activity',
+                    { 
+                        name: '🎙️ Voice Activity',
                         value: [
                             `Total Time: \`${formatDuration(activityStats.totalTime)}\``,
                             `Active Time: \`${formatDuration(activityStats.activeTime)}\``,
                             `AFK Time: \`${formatDuration(activityStats.afkTime)}\``,
+                            `Active %: \`${activityStats.activePercentage}%\``
                         ].join('\n'),
                         inline: true
                     },
                     {
-                        name: '💬 Chat Activity',
-                        value: `Messages Sent: \`${activityStats.messageCount}\``,
+                        name: '💬 Messages',
+                        value: `Total: \`${activityStats.messageCount}\``,
                         inline: true
-                    },
-                    {
-                        name: '\u200B',
-                        value: '\u200B',
-                        inline: false
-                    },
-                    {
-                        name: '📊 Activity Distribution',
-                        value: [
-                            `${progressBar}`,
-                            `Active: ${activityStats.activePercentage}% | AFK: ${100 - activityStats.activePercentage}%`
-                        ].join('\n')
                     }
                 )
-                .setTimestamp()
-                .setFooter({ text: 'Last updated' });
+                .setTimestamp(today)
+                .setFooter({ text: 'Stats since' });
 
-            await message.reply({ 
-                embeds: [embed],
-                ephemeral: isSlash
-            });
+            const reply = { embeds: [embed] };
+            if (isSlash) {
+                reply.flags = 64; // Ephemeral flag
+            }
+            await message.reply(reply);
+
         } catch (error) {
-            console.error('Error fetching daily stats:', error);
-            const errorEmbed = new EmbedBuilder()
-                .setColor(0xFF0000)
-                .setTitle('❌ Error')
-                .setDescription('Failed to fetch daily stats. Please try again later.');
-
-            await message.reply({ 
-                embeds: [errorEmbed],
-                ephemeral: isSlash
-            });
+            console.error('Error in presencedaily command:', error);
+            const errorReply = { 
+                content: 'An error occurred while fetching daily stats.',
+                flags: isSlash ? 64 : undefined
+            };
+            await message.reply(errorReply);
         }
     }
-}); 
+});

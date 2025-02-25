@@ -17,7 +17,11 @@ module.exports = new Command({
     ],
     async execute(message, args, isSlash = false) {
         try {
-            const targetUser = args?.user || message.author;
+            // Handle both slash commands and regular commands
+            const targetUser = isSlash ? 
+                (message.options.getUser('user') || message.user) : 
+                (args?.user || message.author);
+
             const member = await message.guild.members.fetch(targetUser.id);
             const weekStart = getWeekStart(new Date());
 
@@ -39,10 +43,11 @@ module.exports = new Command({
                     .setDescription('❌ No activity recorded this week.')
                     .setFooter({ text: 'Try joining a voice channel or sending messages!' });
 
-                await message.reply({ 
-                    embeds: [noStatsEmbed],
-                    ephemeral: isSlash
-                });
+                const reply = { embeds: [noStatsEmbed] };
+                if (isSlash) {
+                    reply.flags = 64; // Ephemeral flag
+                }
+                await message.reply(reply);
                 return;
             }
 
@@ -93,16 +98,19 @@ module.exports = new Command({
                     }
                 );
 
-            await message.reply({ 
-                embeds: [embed],
-                ephemeral: isSlash
-            });
+            const reply = { embeds: [embed] };
+            if (isSlash) {
+                reply.flags = 64; // Ephemeral flag
+            }
+            await message.reply(reply);
+
         } catch (error) {
             console.error('Error in presenceweekly command:', error);
-            await message.reply({ 
-                content: '❌ An error occurred while fetching activity stats.',
-                ephemeral: isSlash
-            });
+            const errorReply = { 
+                content: 'An error occurred while fetching weekly stats.',
+                flags: isSlash ? 64 : undefined
+            };
+            await message.reply(errorReply);
         }
     }
 });

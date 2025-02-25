@@ -1,6 +1,5 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
 const Command = require('../../structures/Command');
-const prisma = require('../../config/prisma');
 const { formatDuration, getWeekStart, getMonthStart } = require('../../utils/timeUtils');
 const { fetchActivityData } = require('../../utils/activityUtils');
 
@@ -8,74 +7,84 @@ const ACTIVITY_THRESHOLD_PERCENTAGE = 5; // 5% of top 10 average
 
 module.exports = new Command({
     name: 'presencecheck',
-    description: 'Check presence activity of members with a specific role',
-    category: 'admin',
-    permissions: ['ADMINISTRATOR'],
-    usage: '@role [daily|weekly|monthly]',
-    cooldown: 10,
-    async execute(message, args, handler) {
+    description: 'Check activity for a role',
+    defaultMemberPermissions: ['ManageRoles'],
+    options: [
+        {
+            name: 'role',
+            description: 'Role to check activity for',
+            type: 8,
+            required: true
+        },
+        {
+            name: 'period',
+            description: 'Period to check activity for',
+            type: 3,
+            required: true,
+            choices: [
+                { name: 'Daily', value: 'daily' },
+                { name: 'Weekly', value: 'weekly' },
+                { name: 'Monthly', value: 'monthly' }
+            ]
+        }
+    ],
+    async execute(message, args, isSlash = false) {
         try {
-            // Handle both slash commands and prefix commands
-            const isSlash = message.commandName === 'presencecheck';
-            
             // Get role based on command type
             const role = isSlash ? 
                 message.options.getRole('role') : 
                 message.mentions.roles.first();
 
             if (!role) {
-                const response = 'Please mention a role to check.';
-                if (isSlash) {
-                    await message.reply({ content: response, ephemeral: true });
-                } else {
-                    await message.reply(response);
-                }
+                const reply = { 
+                    content: '❌ Please specify a valid role.',
+                    flags: isSlash ? 64 : undefined
+                };
+                await message.reply(reply);
                 return;
             }
 
-            // Get period (daily, weekly or monthly)
-            const period = isSlash ?
-                (message.options.getString('period') || 'monthly') :
-                (args[1] || 'monthly');
+            // Get period based on command type
+            const period = isSlash ? 
+                message.options.getString('period') : 
+                args.period || 'weekly';
 
-            // Validate period
-            const validPeriods = ['daily', 'weekly', 'monthly'];
-            const normalizedPeriod = period.toLowerCase();
-            
-            if (!validPeriods.includes(normalizedPeriod)) {
-                const response = 'Invalid period. Use: daily, weekly or monthly';
-                if (isSlash) {
-                    await message.reply({ content: response, ephemeral: true });
-                } else {
-                    await message.reply(response);
-                }
-                return;
-            }
-
-            // Get the appropriate date and table based on period 
+            // Calculate start date based on period
+            const now = new Date();
             let startDate;
             let title;
 
-            switch (normalizedPeriod) {
+            switch (period) {
                 case 'daily':
-                    startDate = new Date();
+                    startDate = new Date(now);
                     startDate.setHours(0, 0, 0, 0);
                     title = 'Daily Activity Check';
                     break;
                 case 'weekly':
-                    startDate = getWeekStart(new Date());
+                    startDate = getWeekStart(now);
                     title = 'Weekly Activity Check';
                     break;
                 case 'monthly':
-                    startDate = getMonthStart(new Date());
+                    startDate = getMonthStart(now);
                     title = 'Monthly Activity Check';
                     break;
+                default:
+                    startDate = getWeekStart(now);
+                    title = 'Weekly Activity Check';
             }
 
             // Get role members
             const members = role.members;
+            if (!members.size) {
+                const reply = { 
+                    content: '❌ No members found with this role.',
+                    flags: isSlash ? 64 : undefined
+                };
+                await message.reply(reply);
+                return;
+            }
 
-            // Get activity data
+            // Get activity data for all members
             const activityData = await Promise.all(
                 Array.from(members.values()).map(async (member) => {
                     const { data: stats } = await fetchActivityData({
@@ -119,118 +128,38 @@ module.exports = new Command({
                 })
                 .sort((a, b) => b.voiceTime - a.voiceTime);
 
-            // Setup pagination
-            const itemsPerPage = 10;
-            const pages = Math.ceil(inactiveMembers.length / itemsPerPage);
-            let currentPage = 0;
+            // Create embed
+            const embed = new EmbedBuilder()
+                .setTitle(`${title} - ${role.name}`)
+                .setColor(inactiveMembers.length > 0 ? 0xFF4444 : 0x00FF00)
+                .setTimestamp();
 
-            // Create page embed function
-            const getPageEmbed = (page) => {
-                const start = page * itemsPerPage;
-                const end = Math.min(start + itemsPerPage, inactiveMembers.length);
-                const pageMembers = inactiveMembers.slice(start, end);
+            if (inactiveMembers.length === 0) {
+                embed.setDescription('✅ All members are active!');
+            } else {
+                const description = inactiveMembers.map(({ displayName, voiceTime, percentage }) =>
+                    `${displayName}\n• Voice Time: \`${formatDuration(voiceTime)}\`\n• Activity: \`${percentage}%\` of top average`
+                ).join('\n\n');
 
-                return new EmbedBuilder()
-                    .setTitle(`${title} - ${role.name}`)
-                    .setColor('#FF4444')
-                    .setDescription(pageMembers.map(({ displayName, voiceTime, percentage }) =>
-                        `${displayName}\n• Voice Time: ${formatDuration(voiceTime)}\n• Activity: ${percentage}% of top average`
-                    ).join('\n\n'))
+                embed.setDescription(description)
                     .setFooter({ 
                         text: `Required Active Time: ${formatDuration(minimumThreshold)} • Total inactive: ${inactiveMembers.length}` 
                     });
-            };
+            }
 
-            // Create navigation buttons
-            const getButtons = (currentPage) => {
-                return new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('first')
-                        .setLabel('⏪ First')
-                        .setStyle(ButtonStyle.Primary)
-                        .setDisabled(currentPage === 0),
-                    new ButtonBuilder()
-                        .setCustomId('prev')
-                        .setLabel('◀️ Previous')
-                        .setStyle(ButtonStyle.Primary)
-                        .setDisabled(currentPage === 0),
-                    new ButtonBuilder()
-                        .setCustomId('next')
-                        .setLabel('Next ▶️')
-                        .setStyle(ButtonStyle.Primary)
-                        .setDisabled(currentPage === pages - 1),
-                    new ButtonBuilder()
-                        .setCustomId('last')
-                        .setLabel('Last ⏩')
-                        .setStyle(ButtonStyle.Primary)
-                        .setDisabled(currentPage === pages - 1)
-                );
-            };
-
-            // Send initial page
-            const pageMessage = await (isSlash ?
-                message.reply({
-                    embeds: [getPageEmbed(0)],
-                    components: [getButtons(0)]
-                }) :
-                message.channel.send({
-                    embeds: [getPageEmbed(0)],
-                    components: [getButtons(0)]
-                })
-            );
-
-            // Create button collector
-            const collector = pageMessage.createMessageComponentCollector({
-                componentType: ComponentType.Button,
-                time: 300000 // 5 minutes
-            });
-
-            collector.on('collect', async (interaction) => {
-                if (interaction.user.id !== (isSlash ? message.user.id : message.author.id)) {
-                    await interaction.reply({ 
-                        content: 'Only the command user can navigate pages.', 
-                        ephemeral: true 
-                    });
-                    return;
-                }
-
-                switch (interaction.customId) {
-                    case 'first':
-                        currentPage = 0;
-                        break;
-                    case 'prev':
-                        currentPage = Math.max(0, currentPage - 1);
-                        break;
-                    case 'next':
-                        currentPage = Math.min(pages - 1, currentPage + 1);
-                        break;
-                    case 'last':
-                        currentPage = pages - 1;
-                        break;
-                }
-
-                await interaction.update({
-                    embeds: [getPageEmbed(currentPage)],
-                    components: [getButtons(currentPage)]
-                });
-            });
-
-            collector.on('end', () => {
-                pageMessage.edit({ components: [] }).catch(() => {});
-            });
+            const reply = { embeds: [embed] };
+            if (isSlash) {
+                reply.flags = 64; // Ephemeral flag
+            }
+            await message.reply(reply);
 
         } catch (error) {
-            console.error('Role check error:', error);
-            const response = 'Error checking role activity.';
-            if (isSlash) {
-                if (!message.replied) {
-                    await message.reply({ content: response, ephemeral: true });
-                } else {
-                    await message.followUp({ content: response, ephemeral: true });
-                }
-            } else {
-                await message.reply(response);
-            }
+            console.error('Error in presencecheck command:', error);
+            const errorReply = { 
+                content: 'An error occurred while checking role activity.',
+                flags: isSlash ? 64 : undefined
+            };
+            await message.reply(errorReply);
         }
     }
-}); 
+});
