@@ -218,29 +218,16 @@ const commands = [
 
     // Stats Commands
     new SlashCommandBuilder()
-        .setName('presenceleaderboard')
-        .setDescription('Display presence leaderboard')
-        .addStringOption(option =>
-            option.setName('period')
-                .setDescription('Time period to show (default: monthly)')
+        .setName('presencemonthly')
+        .setDescription('Display monthly presence stats')
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('User to check (default: yourself)')
                 .setRequired(false)
-                .addChoices(
-                    { name: 'Daily', value: 'daily' },
-                    { name: 'Weekly', value: 'weekly' },
-                    { name: 'Monthly', value: 'monthly' }
-                )
         ),
     new SlashCommandBuilder()
         .setName('presenceweekly')
         .setDescription('Display weekly presence stats')
-        .addUserOption(option =>
-            option.setName('user')
-                .setDescription('The user to check stats for (defaults to you)')
-                .setRequired(false)
-        ),
-    new SlashCommandBuilder()
-        .setName('presencemonthly')
-        .setDescription('Display monthly presence stats')
         .addUserOption(option =>
             option.setName('user')
                 .setDescription('The user to check stats for (defaults to you)')
