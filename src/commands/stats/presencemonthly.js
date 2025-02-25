@@ -59,10 +59,16 @@ module.exports = new Command({
             } else {
                 // Create progress bar for active/AFK/muted distribution
                 const progressBarLength = 20;
-                const totalTime = activityStats.totalTime || 1; // Prevent division by zero
                 const mutedTime = stats?.mutedDeafenedTimeSeconds || 0;
-                const activePercent = Math.round((activityStats.activeTime / totalTime) * 100) || 0;
-                const afkPercent = Math.round((activityStats.afkTime / totalTime) * 100) || 0;
+                const activeTime = activityStats.activeTime || 0;
+                const afkTime = activityStats.afkTime || 0;
+                
+                // Calculate total time including all components
+                const totalTime = activeTime + afkTime + mutedTime || 1; // Prevent division by zero
+                
+                // Calculate percentages based on the true total time
+                const activePercent = Math.round((activeTime / totalTime) * 100) || 0;
+                const afkPercent = Math.round((afkTime / totalTime) * 100) || 0;
                 const mutedPercent = Math.round((mutedTime / totalTime) * 100) || 0;
 
                 // Ensure percentages add up to 100%
@@ -77,9 +83,9 @@ module.exports = new Command({
                     `${activityStats.isActive ? '✅ Active' : '⚠️ Inactive'}`,
                     '',
                     '🎙️ **Voice Activity**',
-                    `• Total Time: \`${formatDuration(activityStats.totalTime || 0)}\``,
-                    `• Active Time: \`${formatDuration(activityStats.activeTime || 0)}\``,
-                    `• AFK Time: \`${formatDuration(activityStats.afkTime || 0)}\``,
+                    `• Total Time: \`${formatDuration(totalTime)}\``,
+                    `• Active Time: \`${formatDuration(activeTime)}\``,
+                    `• AFK Time: \`${formatDuration(afkTime)}\``,
                     `• Muted Time: \`${formatDuration(mutedTime)}\``,
                     `• Activity: \`${activityStats.activePercentage || 0}%\` of requirement`,
                     '',
