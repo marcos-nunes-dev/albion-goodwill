@@ -1,9 +1,10 @@
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const Command = require('../../structures/Command');
 const { formatDuration, getWeekStart, getMonthStart } = require('../../utils/timeUtils');
 const { fetchActivityData } = require('../../utils/activityUtils');
 
 const ACTIVITY_THRESHOLD_PERCENTAGE = 5; // 5% of top 10 average
+const ITEMS_PER_PAGE = 10;
 
 module.exports = new Command({
     name: 'presencecheck',
@@ -20,7 +21,7 @@ module.exports = new Command({
             name: 'period',
             description: 'Period to check activity for',
             type: 3,
-            required: true,
+            required: false,
             choices: [
                 { name: 'Daily', value: 'daily' },
                 { name: 'Weekly', value: 'weekly' },
@@ -50,10 +51,10 @@ module.exports = new Command({
                 return;
             }
 
-            // Get period based on command type
+            // Get period based on command type (default to monthly)
             const period = isSlash ? 
-                message.options.getString('period') : 
-                args.period || 'weekly';
+                (message.options.getString('period') || 'monthly') : 
+                (args.period || 'monthly');
 
             // Calculate start date based on period
             const now = new Date();
@@ -71,12 +72,10 @@ module.exports = new Command({
                     title = 'Weekly Activity Check';
                     break;
                 case 'monthly':
+                default:
                     startDate = getMonthStart(now);
                     title = 'Monthly Activity Check';
                     break;
-                default:
-                    startDate = getWeekStart(now);
-                    title = 'Weekly Activity Check';
             }
 
             // Get role members
@@ -135,31 +134,124 @@ module.exports = new Command({
                 })
                 .sort((a, b) => b.voiceTime - a.voiceTime);
 
-            // Create embed
-            const embed = new EmbedBuilder()
-                .setTitle(`${title} - ${role.name}`)
-                .setColor(inactiveMembers.length > 0 ? 0xFF4444 : 0x00FF00)
-                .setTimestamp();
-
             if (inactiveMembers.length === 0) {
-                embed.setDescription('✅ All members are active!');
-            } else {
-                const description = inactiveMembers.map(({ displayName, voiceTime, percentage }) =>
-                    `${displayName}\n• Voice Time: \`${formatDuration(voiceTime)}\`\n• Activity: \`${percentage}%\` of top average`
-                ).join('\n\n');
+                const embed = new EmbedBuilder()
+                    .setTitle(`${title} - ${role.name}`)
+                    .setColor(0x00FF00)
+                    .setDescription('✅ All members are active!')
+                    .setTimestamp();
 
-                embed.setDescription(description)
+                if (isSlash) {
+                    await message.editReply({ embeds: [embed] });
+                } else {
+                    await message.reply({ embeds: [embed] });
+                }
+                return;
+            }
+
+            // Setup pagination
+            const totalPages = Math.ceil(inactiveMembers.length / ITEMS_PER_PAGE);
+            let currentPage = 0;
+
+            // Create page embed
+            const getPageEmbed = (page) => {
+                const start = page * ITEMS_PER_PAGE;
+                const end = Math.min(start + ITEMS_PER_PAGE, inactiveMembers.length);
+                const pageMembers = inactiveMembers.slice(start, end);
+
+                return new EmbedBuilder()
+                    .setTitle(`${title} - ${role.name}`)
+                    .setColor(0xFF4444)
+                    .setDescription(pageMembers.map(({ displayName, voiceTime, percentage }) =>
+                        `${displayName}\n• Voice Time: \`${formatDuration(voiceTime)}\`\n• Activity: \`${percentage}%\` of top average`
+                    ).join('\n\n'))
                     .setFooter({ 
-                        text: `Required Active Time: ${formatDuration(minimumThreshold)} • Total inactive: ${inactiveMembers.length}` 
-                    });
-            }
+                        text: `Required Active Time: ${formatDuration(minimumThreshold)} • Total inactive: ${inactiveMembers.length} • Page ${page + 1}/${totalPages}` 
+                    })
+                    .setTimestamp();
+            };
 
-            // Send the response based on command type
-            if (isSlash) {
-                await message.editReply({ embeds: [embed] });
-            } else {
-                await message.reply({ embeds: [embed] });
-            }
+            // Create navigation buttons
+            const getButtons = (page) => {
+                return new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('first')
+                        .setLabel('⏪ First')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(page === 0),
+                    new ButtonBuilder()
+                        .setCustomId('prev')
+                        .setLabel('◀️ Previous')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(page === 0),
+                    new ButtonBuilder()
+                        .setCustomId('next')
+                        .setLabel('Next ▶️')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(page === totalPages - 1),
+                    new ButtonBuilder()
+                        .setCustomId('last')
+                        .setLabel('Last ⏩')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(page === totalPages - 1)
+                );
+            };
+
+            // Send initial message
+            const initialEmbed = getPageEmbed(0);
+            const initialButtons = getButtons(0);
+            
+            const response = await (isSlash ? 
+                message.editReply({ embeds: [initialEmbed], components: [initialButtons] }) :
+                message.reply({ embeds: [initialEmbed], components: [initialButtons] })
+            );
+
+            // Create button collector
+            const collector = response.createMessageComponentCollector({
+                time: 300000 // 5 minutes
+            });
+
+            collector.on('collect', async (interaction) => {
+                // Check if the interaction is from the command user
+                if (interaction.user.id !== (isSlash ? message.user.id : message.author.id)) {
+                    await interaction.reply({
+                        content: 'Only the command user can navigate pages.',
+                        ephemeral: true
+                    });
+                    return;
+                }
+
+                // Update current page based on button clicked
+                switch (interaction.customId) {
+                    case 'first':
+                        currentPage = 0;
+                        break;
+                    case 'prev':
+                        currentPage = Math.max(0, currentPage - 1);
+                        break;
+                    case 'next':
+                        currentPage = Math.min(totalPages - 1, currentPage + 1);
+                        break;
+                    case 'last':
+                        currentPage = totalPages - 1;
+                        break;
+                }
+
+                // Update message with new page
+                await interaction.update({
+                    embeds: [getPageEmbed(currentPage)],
+                    components: [getButtons(currentPage)]
+                });
+            });
+
+            // Remove buttons when collector expires
+            collector.on('end', () => {
+                if (isSlash) {
+                    message.editReply({ components: [] }).catch(() => {});
+                } else {
+                    response.edit({ components: [] }).catch(() => {});
+                }
+            });
 
         } catch (error) {
             console.error('Error in presencecheck command:', error);
