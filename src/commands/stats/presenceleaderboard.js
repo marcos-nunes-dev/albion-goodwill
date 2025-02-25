@@ -2,6 +2,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentTyp
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
 const { formatDuration, getWeekStart, getMonthStart } = require('../../utils/timeUtils');
+const { processActivityRecords, calculateActivityDistribution } = require('../../utils/activityUtils');
 
 module.exports = new Command({
     name: 'presenceleaderboard',
@@ -116,7 +117,12 @@ module.exports = new Command({
                 }));
             }
 
-            if (stats.length === 0) {
+            // Process and sort all members
+            const validEntries = await processActivityRecords(stats, async (userId) => {
+                return await message.guild.members.fetch(userId);
+            });
+
+            if (validEntries.length === 0) {
                 const noStatsEmbed = new EmbedBuilder()
                     .setColor(0xFF0000)
                     .setTitle('📊 Activity Leaderboard')
@@ -127,41 +133,12 @@ module.exports = new Command({
                 return;
             }
 
-            // Process and sort all members
-            const memberActivities = await Promise.all(
-                stats.map(async (stat) => {
-                    const member = await message.guild.members.fetch(stat.userId).catch(() => null);
-                    if (!member) return null;
-
-                    const activeTime = stat.voiceTimeSeconds - stat.afkTimeSeconds;
-                    const totalTime = stat.voiceTimeSeconds;
-                    const activePercentage = totalTime > 0 ? Math.round((activeTime / totalTime) * 100) : 0;
-
-                    return {
-                        member,
-                        activeTime,
-                        messageCount: stat.messageCount,
-                        activePercentage,
-                        isActive: activeTime > 0 // Consider members with any active time as active
-                    };
-                })
-            );
-
-            // Filter out null entries and sort by active time
-            const validEntries = memberActivities
-                .filter(entry => entry !== null)
-                .sort((a, b) => b.activeTime - a.activeTime);
-
-            // Calculate activity percentages
-            const totalMembers = validEntries.length;
-            const activeMembers = validEntries.filter(entry => entry.isActive).length;
-            const inactiveMembers = totalMembers - activeMembers;
-            const activePercentage = totalMembers > 0 ? Math.round((activeMembers / totalMembers) * 100) : 0;
-            const inactivePercentage = 100 - activePercentage;
+            // Calculate activity distribution
+            const distribution = calculateActivityDistribution(validEntries);
 
             // Create progress bar for active/inactive ratio
             const progressBarLength = 20;
-            const activeBlocks = Math.round((activePercentage / 100) * progressBarLength);
+            const activeBlocks = Math.round((distribution.activePercentage / 100) * progressBarLength);
             const progressBar = '█'.repeat(activeBlocks) + '░'.repeat(progressBarLength - activeBlocks);
 
             // Create summary embed
@@ -173,9 +150,9 @@ module.exports = new Command({
                         name: 'Activity Distribution',
                         value: [
                             `${progressBar}`,
-                            `Active: ${activePercentage}% (${activeMembers} members)`,
-                            `Inactive: ${inactivePercentage}% (${inactiveMembers} members)`,
-                            `Total Members: ${totalMembers}`
+                            `Active: ${distribution.activePercentage}% (${distribution.activeMembers} members)`,
+                            `Inactive: ${distribution.inactivePercentage}% (${distribution.inactiveMembers} members)`,
+                            `Total Members: ${distribution.totalMembers}`
                         ].join('\n')
                     }
                 )
@@ -199,9 +176,8 @@ module.exports = new Command({
                                 `${medal} ${status} ${member.toString()}`,
                                 `└ Voice: \`${formatDuration(activeTime)}\` • Messages: \`${messageCount}\` • Active: \`${activePercentage}%\``
                             ].join('\n');
-                        }).join('\n\n')
-                    )
-                    .setFooter({ text: `Total Members: ${validEntries.length}` });
+                        }).join('\n')
+                    );
             };
 
             // Initialize pagination

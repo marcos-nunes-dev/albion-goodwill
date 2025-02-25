@@ -1,93 +1,33 @@
 const { EmbedBuilder } = require('discord.js');
 const Command = require('../../structures/Command');
-const prisma = require('../../config/prisma');
 const { formatDuration, getWeekStart } = require('../../utils/timeUtils');
+const { calculateActivityStats, fetchActivityData } = require('../../utils/activityUtils');
 
 module.exports = new Command({
     name: 'presenceweekly',
-    description: 'Shows weekly presence stats for a user',
-    category: 'stats',
-    usage: '[@user]',
-    cooldown: 5,
-    async execute(message, args, handler) {
+    description: 'Check weekly activity stats for a user',
+    defaultMemberPermissions: null,
+    options: [
+        {
+            name: 'user',
+            description: 'User to check stats for (defaults to you)',
+            type: 6,
+            required: false
+        }
+    ],
+    async execute(message, args, isSlash = false) {
         try {
-            const isSlash = message.commandName === 'presenceweekly';
-            
-            // Get target user based on command type
-            let targetUser;
-            if (isSlash) {
-                targetUser = message.options.getUser('user') || message.user;
-            } else {
-                targetUser = message.mentions.users.first() || message.author;
-            }
-
-            const weekStart = getWeekStart(new Date());
+            const targetUser = args?.user || message.author;
             const member = await message.guild.members.fetch(targetUser.id);
+            const weekStart = getWeekStart(new Date());
 
-            // Try to get weekly stats first
-            let stats = await prisma.weeklyActivity.findUnique({
-                where: {
-                    userId_guildId_weekStart: {
-                        userId: targetUser.id,
-                        guildId: message.guild.id,
-                        weekStart: weekStart
-                    }
-                }
+            // Fetch activity data with fallback
+            const { data: stats, isPartialData } = await fetchActivityData({
+                userId: targetUser.id,
+                guildId: message.guild.id,
+                period: 'weekly',
+                startDate: weekStart
             });
-
-            let isPartialData = false;
-            let dailyStats = [];
-
-            // If no weekly stats, try daily data
-            if (!stats) {
-                dailyStats = await prisma.dailyActivity.findMany({
-                    where: {
-                        userId: targetUser.id,
-                        guildId: message.guild.id,
-                        date: {
-                            gte: weekStart,
-                            lt: new Date(weekStart.getTime() + 604800000)
-                        }
-                    }
-                });
-
-                if (dailyStats.length > 0) {
-                    isPartialData = true;
-                    stats = dailyStats.reduce((acc, curr) => ({
-                        voiceTimeSeconds: (acc.voiceTimeSeconds || 0) + curr.voiceTimeSeconds,
-                        afkTimeSeconds: (acc.afkTimeSeconds || 0) + curr.afkTimeSeconds,
-                        mutedDeafenedTimeSeconds: (acc.mutedDeafenedTimeSeconds || 0) + curr.mutedDeafenedTimeSeconds,
-                        messageCount: (acc.messageCount || 0) + curr.messageCount
-                    }), {});
-                }
-            } else {
-                // Try to supplement weekly data with any additional daily data
-                dailyStats = await prisma.dailyActivity.findMany({
-                    where: {
-                        userId: targetUser.id,
-                        guildId: message.guild.id,
-                        date: {
-                            gte: weekStart,
-                            lt: new Date(weekStart.getTime() + 604800000)
-                        }
-                    }
-                });
-
-                if (dailyStats.length > 0) {
-                    const dailyTotal = dailyStats.reduce((acc, curr) => ({
-                        voiceTimeSeconds: (acc.voiceTimeSeconds || 0) + curr.voiceTimeSeconds,
-                        afkTimeSeconds: (acc.afkTimeSeconds || 0) + curr.afkTimeSeconds,
-                        mutedDeafenedTimeSeconds: (acc.mutedDeafenedTimeSeconds || 0) + curr.mutedDeafenedTimeSeconds,
-                        messageCount: (acc.messageCount || 0) + curr.messageCount
-                    }), {});
-
-                    // If daily total is greater than weekly, use it instead
-                    if (dailyTotal.voiceTimeSeconds > stats.voiceTimeSeconds) {
-                        isPartialData = true;
-                        stats = dailyTotal;
-                    }
-                }
-            }
 
             if (!stats) {
                 const noStatsEmbed = new EmbedBuilder()
@@ -106,17 +46,12 @@ module.exports = new Command({
                 return;
             }
 
-            // Calculate percentages
-            const totalTime = stats.voiceTimeSeconds;
-            const mutedTime = stats.mutedDeafenedTimeSeconds || 0;
-            const afkTime = stats.afkTimeSeconds;
-            const activeTime = totalTime - afkTime - mutedTime;
-            const activePercentage = totalTime > 0 ? Math.round((activeTime / totalTime) * 100) : 0;
-            const afkPercentage = totalTime > 0 ? Math.round((afkTime / totalTime) * 100) : 0;
+            // Calculate activity stats
+            const activityStats = calculateActivityStats(stats);
 
             // Create progress bar for active/AFK ratio
             const progressBarLength = 20;
-            const activeBlocks = Math.round((activePercentage / 100) * progressBarLength);
+            const activeBlocks = Math.round((activityStats.activePercentage / 100) * progressBarLength);
             const progressBar = '█'.repeat(activeBlocks) + '░'.repeat(progressBarLength - activeBlocks);
 
             const embed = new EmbedBuilder()
@@ -133,16 +68,15 @@ module.exports = new Command({
                     {
                         name: '🎤 Voice Activity',
                         value: [
-                            `Total Time: \`${formatDuration(totalTime)}\``,
-                            `Active Time: \`${formatDuration(activeTime)}\``,
-                            `AFK Time: \`${formatDuration(afkTime)}\``,
-                            `Muted Time: \`${formatDuration(mutedTime)}\``,
+                            `Total Time: \`${formatDuration(activityStats.totalTime)}\``,
+                            `Active Time: \`${formatDuration(activityStats.activeTime)}\``,
+                            `AFK Time: \`${formatDuration(activityStats.afkTime)}\``,
                         ].join('\n'),
                         inline: true
                     },
                     {
                         name: '💬 Chat Activity',
-                        value: `Messages Sent: \`${stats.messageCount}\``,
+                        value: `Messages Sent: \`${activityStats.messageCount}\``,
                         inline: true
                     },
                     {
@@ -154,28 +88,21 @@ module.exports = new Command({
                         name: '📊 Activity Distribution',
                         value: [
                             `${progressBar}`,
-                            `Active: ${activePercentage}% | AFK: ${afkPercentage}%`
+                            `Active: ${activityStats.activePercentage}% | AFK: ${100 - activityStats.activePercentage}%`
                         ].join('\n')
                     }
-                )
-                .setTimestamp()
-                .setFooter({ text: 'Last updated' });
+                );
 
             await message.reply({ 
                 embeds: [embed],
                 ephemeral: isSlash
             });
         } catch (error) {
-            console.error('Error fetching weekly stats:', error);
-            const errorEmbed = new EmbedBuilder()
-                .setColor(0xFF0000)
-                .setTitle('❌ Error')
-                .setDescription('Failed to fetch weekly stats. Please try again later.');
-
+            console.error('Error in presenceweekly command:', error);
             await message.reply({ 
-                embeds: [errorEmbed],
+                content: '❌ An error occurred while fetching activity stats.',
                 ephemeral: isSlash
             });
         }
     }
-}); 
+});

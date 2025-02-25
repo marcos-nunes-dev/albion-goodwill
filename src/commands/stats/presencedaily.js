@@ -2,6 +2,7 @@ const { EmbedBuilder } = require('discord.js');
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
 const { formatDuration } = require('../../utils/timeUtils');
+const { calculateActivityStats } = require('../../utils/activityUtils');
 
 module.exports = new Command({
     name: 'presencedaily',
@@ -53,17 +54,12 @@ module.exports = new Command({
                 return;
             }
 
-            // Calculate percentages
-            const totalTime = stats.voiceTimeSeconds;
-            const mutedTime = stats.mutedDeafenedTimeSeconds || 0;
-            const afkTime = stats.afkTimeSeconds;
-            const activeTime = totalTime - afkTime - mutedTime;
-            const activePercentage = totalTime > 0 ? Math.round((activeTime / totalTime) * 100) : 0;
-            const afkPercentage = totalTime > 0 ? Math.round((afkTime / totalTime) * 100) : 0;
+            // Calculate activity stats
+            const activityStats = calculateActivityStats(stats);
 
             // Create progress bar for active/AFK ratio
             const progressBarLength = 20;
-            const activeBlocks = Math.round((activePercentage / 100) * progressBarLength);
+            const activeBlocks = Math.round((activityStats.activePercentage / 100) * progressBarLength);
             const progressBar = '█'.repeat(activeBlocks) + '░'.repeat(progressBarLength - activeBlocks);
 
             const embed = new EmbedBuilder()
@@ -77,16 +73,15 @@ module.exports = new Command({
                     {
                         name: '🎤 Voice Activity',
                         value: [
-                            `Total Time: \`${formatDuration(totalTime)}\``,
-                            `Active Time: \`${formatDuration(activeTime)}\``,
-                            `AFK Time: \`${formatDuration(afkTime)}\``,
-                            `Muted Time: \`${formatDuration(mutedTime)}\``,
+                            `Total Time: \`${formatDuration(activityStats.totalTime)}\``,
+                            `Active Time: \`${formatDuration(activityStats.activeTime)}\``,
+                            `AFK Time: \`${formatDuration(activityStats.afkTime)}\``,
                         ].join('\n'),
                         inline: true
                     },
                     {
                         name: '💬 Chat Activity',
-                        value: `Messages Sent: \`${stats.messageCount}\``,
+                        value: `Messages Sent: \`${activityStats.messageCount}\``,
                         inline: true
                     },
                     {
@@ -98,7 +93,7 @@ module.exports = new Command({
                         name: '📊 Activity Distribution',
                         value: [
                             `${progressBar}`,
-                            `Active: ${activePercentage}% | AFK: ${afkPercentage}%`
+                            `Active: ${activityStats.activePercentage}% | AFK: ${100 - activityStats.activePercentage}%`
                         ].join('\n')
                     }
                 )

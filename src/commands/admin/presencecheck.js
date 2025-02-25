@@ -196,86 +196,51 @@ module.exports = new Command({
                 const activity = stats.find(s => s.userId === member.id);
                 const totalTime = activity?.voiceTimeSeconds || 0;
                 const afkTime = activity?.afkTimeSeconds || 0;
-                const mutedTime = activity?.mutedDeafenedTimeSeconds || 0;
-                const activeTime = totalTime - afkTime - mutedTime;
-                const activePercentage = top10Average > 0 
-                    ? Math.round((activeTime / top10Average) * 100) 
-                    : 0;
+                const activeTime = totalTime - afkTime; // Simplified calculation like presenceleaderboard
 
                 return {
                     member,
-                    isActive: activeTime >= activityThreshold,
-                    totalTime,
                     activeTime,
-                    activePercentage,
+                    totalTime,
+                    afkTime,
                     messageCount: activity?.messageCount || 0
                 };
             });
 
             // Calculate top 10 average activity
-            const sortedStats = [...stats].sort((a, b) => {
-                const activeTimeA = a.voiceTimeSeconds - a.afkTimeSeconds - a.mutedDeafenedTimeSeconds;
-                const activeTimeB = b.voiceTimeSeconds - b.afkTimeSeconds - b.mutedDeafenedTimeSeconds;
-                return activeTimeB - activeTimeA;
-            });
+            const sortedStats = memberActivities
+                .sort((a, b) => b.activeTime - a.activeTime);
 
             const top10Stats = sortedStats.slice(0, 10);
             const top10Average = top10Stats.length > 0 
-                ? top10Stats.reduce((sum, stat) => {
-                    return sum + (stat.voiceTimeSeconds - stat.afkTimeSeconds - stat.mutedDeafenedTimeSeconds);
-                }, 0) / top10Stats.length
+                ? top10Stats.reduce((sum, stat) => sum + stat.activeTime, 0) / top10Stats.length
                 : 0;
 
             const activityThreshold = top10Average * (ACTIVITY_THRESHOLD_PERCENTAGE / 100);
 
             // Filter only inactive members and sort by activity percentage
             const inactiveMembers = memberActivities
-                .filter(m => !m.isActive)
+                .filter(m => m.activeTime < activityThreshold)
                 .sort((a, b) => b.activeTime - a.activeTime);
 
-            // Create initial summary embed
-            const summaryEmbed = new EmbedBuilder()
-                .setColor(0xFF0000)
-                .setTitle(`${role.name} Inactivity Check`)
-                .setDescription([
-                    `Members with less than ${ACTIVITY_THRESHOLD_PERCENTAGE}% of top 10 average activity`,
-                    `Top 10 Average Active Time: \`${formatDuration(top10Average)}\``,
-                    `Required Active Time: \`${formatDuration(activityThreshold)}\``,
-                ].join('\n'))
-                .addFields(
-                    {
-                        name: '📊 Summary',
-                        value: [
-                            `Total Members: \`${members.size}\``,
-                            `Active Members: \`${members.size - inactiveMembers.length}\``,
-                            `Inactive Members: \`${inactiveMembers.length}\``,
-                        ].join('\n')
-                    }
-                )
-                .setTimestamp();
-
-            // Send summary embed
-            const initialResponse = await (isSlash ?
-                message.reply({ embeds: [summaryEmbed], fetchReply: true }) :
-                message.reply({ embeds: [summaryEmbed] })
-            );
-
             if (inactiveMembers.length === 0) {
-                const response = '✅ No inactive members found!';
-                if (isSlash) {
-                    await message.followUp({ content: response, ephemeral: true });
-                } else {
-                    await message.channel.send(response);
-                }
+                const allActiveEmbed = new EmbedBuilder()
+                    .setColor(0x00FF00)
+                    .setDescription('✅ All members are active!');
+
+                await message.reply({ 
+                    embeds: [allActiveEmbed],
+                    ephemeral: isSlash
+                });
                 return;
             }
 
-            // Initialize pagination
-            const itemsPerPage = 20;
+            // Setup pagination
+            const itemsPerPage = 10;
             const pages = Math.ceil(inactiveMembers.length / itemsPerPage);
             let currentPage = 0;
 
-            // Create page embed
+            // Create page embed function
             const getPageEmbed = (page) => {
                 const start = page * itemsPerPage;
                 const end = Math.min(start + itemsPerPage, inactiveMembers.length);
@@ -286,17 +251,17 @@ module.exports = new Command({
                     .setTitle(`Inactive Members (Page ${page + 1}/${pages})`)
                     .setDescription([
                         isPartialData ? '⚠️ **Note:** Some data is aggregated from daily/weekly records.' : '',
-                        pageMembers.map(({ member, activeTime, activePercentage, messageCount }) => {
-                            const activity = stats.find(s => s.userId === member.id);
-                            const afkTime = activity?.afkTimeSeconds || 0;
-                            const mutedTime = activity?.mutedDeafenedTimeSeconds || 0;
-                            const totalTime = activity?.voiceTimeSeconds || 0;
-                            const details = totalTime > 0 || afkTime > 0 || mutedTime > 0
-                                ? `Voice: \`${formatDuration(totalTime)}\` (${activePercentage}% of top avg) • AFK: \`${formatDuration(afkTime)}\` • Muted: \`${formatDuration(mutedTime)}\` • Messages: \`${messageCount}\``
+                        pageMembers.map(({ member, activeTime, totalTime, afkTime, messageCount }) => {
+                            const activePercentage = top10Average > 0 
+                                ? Math.round((activeTime / top10Average) * 100)
+                                : 0;
+                            
+                            const details = totalTime > 0 || afkTime > 0
+                                ? `Voice: \`${formatDuration(totalTime)}\` (${activePercentage}% of top avg) • AFK: \`${formatDuration(afkTime)}\` • Messages: \`${messageCount}\``
                                 : '`No activity recorded`';
                             return `🔴 ${member.toString()} - ${details}`;
                         }).join('\n')
-                    ])
+                    ].filter(Boolean).join('\n'))
                     .setFooter({ 
                         text: `Required Active Time: ${formatDuration(activityThreshold)} • Total inactive: ${inactiveMembers.length}` 
                     });
@@ -330,7 +295,7 @@ module.exports = new Command({
 
             // Send initial page
             const pageMessage = await (isSlash ?
-                message.followUp({
+                message.reply({
                     embeds: [getPageEmbed(0)],
                     components: [getButtons(0)]
                 }) :
