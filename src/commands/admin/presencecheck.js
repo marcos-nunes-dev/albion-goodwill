@@ -119,7 +119,7 @@ module.exports = new Command({
             const minimumThreshold = topAvgVoiceTime * (ACTIVITY_THRESHOLD_PERCENTAGE / 100);
 
             // Process all members
-            const memberStats = activityData
+            const allMemberStats = activityData
                 .map(data => {
                     const stats = data.stats;
                     const voiceTime = stats?.voiceTimeSeconds || 0;
@@ -139,18 +139,18 @@ module.exports = new Command({
                         isActive: voiceTime >= minimumThreshold
                     };
                 })
-                // Filter out active members
-                .filter(member => !member.isActive)
                 .sort((a, b) => {
                     // Sort by data presence first, then by voice time
                     if (a.hasData !== b.hasData) return b.hasData - a.hasData;
                     return b.voiceTime - a.voiceTime;
                 });
 
-            // Get active members for display
-            const activeMembers = activityData
-                .filter(data => (data.stats?.voiceTimeSeconds || 0) >= minimumThreshold)
-                .length;
+            // Split into active and inactive members
+            const activeMemberStats = allMemberStats.filter(member => member.isActive);
+            const inactiveMemberStats = allMemberStats.filter(member => !member.isActive);
+
+            // Combine active and inactive members, with active members first
+            const memberStats = [...activeMemberStats, ...inactiveMemberStats];
 
             if (memberStats.length === 0) {
                 const embed = new EmbedBuilder()
@@ -177,7 +177,7 @@ module.exports = new Command({
                 const end = Math.min(start + ITEMS_PER_PAGE, memberStats.length);
                 const pageMembers = memberStats.slice(start, end);
 
-                const description = pageMembers.map(({ displayName, voiceTime, afkTime, mutedTime, percentage, hasData }) => {
+                const description = pageMembers.map(({ displayName, voiceTime, afkTime, mutedTime, percentage, hasData, isActive }) => {
                     if (!hasData) {
                         return `${displayName}\n❌ No activity data recorded`;
                     }
@@ -187,7 +187,7 @@ module.exports = new Command({
                     const afkPercent = Math.round((afkTime / totalTime) * 100) || 0;
                     const mutedPercent = Math.round((mutedTime / totalTime) * 100) || 0;
 
-                    return `${displayName} 🔴\n` +
+                    return `${displayName} ${isActive ? '✅' : '⚠️'}\n` +
                            `• Voice Time: \`${formatDuration(voiceTime)}\`\n` +
                            `• AFK Time: \`${formatDuration(afkTime)}\`\n` +
                            `• Muted Time: \`${formatDuration(mutedTime)}\`\n` +
@@ -196,6 +196,7 @@ module.exports = new Command({
                 }).join('\n\n');
 
                 const totalMembers = role.members.size;
+                const activeCount = activityData.filter(d => (d.stats?.voiceTimeSeconds || 0) >= minimumThreshold).length;
                 const noDataCount = memberStats.filter(m => !m.hasData).length;
                 const inactiveCount = memberStats.length - noDataCount;
 
@@ -205,20 +206,94 @@ module.exports = new Command({
                     .setDescription(description)
                     .setFooter({ 
                         text: `Required Active Time: ${formatDuration(minimumThreshold)} • ` +
-                             `Total Members: ${totalMembers} • Active: ${activeMembers} • ` +
+                             `Total Members: ${totalMembers} • Active: ${activeCount} • ` +
                              `Inactive: ${inactiveCount} • No Data: ${noDataCount} • ` +
                              `Page ${page + 1}/${totalPages}` 
                     })
                     .setTimestamp();
             };
 
+            // Create navigation buttons
+            const getButtons = (page) => {
+                return new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('first')
+                        .setLabel('⏪ First')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(page === 0),
+                    new ButtonBuilder()
+                        .setCustomId('prev')
+                        .setLabel('◀️ Previous')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(page === 0),
+                    new ButtonBuilder()
+                        .setCustomId('next')
+                        .setLabel('Next ▶️')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(page === totalPages - 1),
+                    new ButtonBuilder()
+                        .setCustomId('last')
+                        .setLabel('Last ⏩')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(page === totalPages - 1)
+                );
+            };
+
             // Send initial message
             const initialEmbed = getPageEmbed(0);
+            const initialButtons = getButtons(0);
             
             const response = await (isSlash ? 
-                message.editReply({ embeds: [initialEmbed] }) :
-                message.reply({ embeds: [initialEmbed] })
+                message.editReply({ embeds: [initialEmbed], components: [initialButtons] }) :
+                message.reply({ embeds: [initialEmbed], components: [initialButtons] })
             );
+
+            // Create button collector
+            const collector = response.createMessageComponentCollector({
+                time: 300000 // 5 minutes
+            });
+
+            collector.on('collect', async (interaction) => {
+                // Check if the interaction is from the command user
+                if (interaction.user.id !== (isSlash ? message.user.id : message.author.id)) {
+                    await interaction.reply({
+                        content: 'Only the command user can navigate pages.',
+                        ephemeral: true
+                    });
+                    return;
+                }
+
+                // Update current page based on button clicked
+                switch (interaction.customId) {
+                    case 'first':
+                        currentPage = 0;
+                        break;
+                    case 'prev':
+                        currentPage = Math.max(0, currentPage - 1);
+                        break;
+                    case 'next':
+                        currentPage = Math.min(totalPages - 1, currentPage + 1);
+                        break;
+                    case 'last':
+                        currentPage = totalPages - 1;
+                        break;
+                }
+
+                // Update message with new page
+                await interaction.update({
+                    embeds: [getPageEmbed(currentPage)],
+                    components: [getButtons(currentPage)]
+                });
+            });
+
+            // Remove buttons when collector expires
+            collector.on('end', () => {
+                if (isSlash) {
+                    message.editReply({ components: [] }).catch(() => {});
+                } else {
+                    response.edit({ components: [] }).catch(() => {});
+                }
+            });
 
         } catch (error) {
             console.error('Error in presencecheck command:', error);
