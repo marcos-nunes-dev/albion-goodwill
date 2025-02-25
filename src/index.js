@@ -6,7 +6,6 @@ const prisma = require('./config/prisma');
 const { formatDuration } = require('./utils/timeUtils');
 const CommandHandler = require('./handlers/CommandHandler');
 const AutocompleteHandler = require('./handlers/AutocompleteHandler');
-const ActivityAggregator = require('./services/ActivityAggregator');
 const GuildManager = require('./services/GuildManager');
 const { registerSlashCommands } = require('./slashCommands/registerCommands');
 const logger = require('./utils/logger');
@@ -34,7 +33,6 @@ const voiceTracker = new VoiceTracker(prisma, guildManager);
 const messageTracker = new MessageTracker();
 const commandHandler = new CommandHandler();
 const autocompleteHandler = new AutocompleteHandler(client);
-const activityAggregator = new ActivityAggregator(client);
 
 // Update railway.toml settings
 let serverStarted = false;
@@ -53,10 +51,6 @@ client.once('ready', async () => {
   logger.info(`Bot logged in`, { username: client.user.tag });
   
   try {
-    // Check for missed aggregations first
-    logger.info('Checking for missed aggregations...');
-    await activityAggregator.checkMissedAggregations();
-
     // Register slash commands
     await registerSlashCommands(client);
 
@@ -107,26 +101,9 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
   try {
     await voiceTracker.handleVoiceStateUpdate(oldState, newState);
   } catch (error) {
-    console.error('Error handling voice state update:', error);
+    console.error('Voice state update error:', error);
   }
 });
-
-// Update periodic checks to log only important events
-setInterval(async () => {
-  const now = new Date();
-  try {
-    if (now.getDay() === 0 && now.getHours() === 0 && now.getMinutes() === 0) {
-      console.log('Running weekly aggregation');
-      await activityAggregator.aggregateWeeklyStats();
-    }
-    if (now.getDate() === 1 && now.getHours() === 0 && now.getMinutes() === 0) {
-      console.log('Running monthly aggregation');
-      await activityAggregator.aggregateMonthlyStats();
-    }
-  } catch (error) {
-    console.error('Aggregation error:', error.message);
-  }
-}, 60000);
 
 // Add periodic check (every 5 minutes)
 setInterval(async () => {

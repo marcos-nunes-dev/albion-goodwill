@@ -2,8 +2,9 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentTyp
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
 const { formatDuration, getWeekStart, getMonthStart } = require('../../utils/timeUtils');
+const { fetchActivityData } = require('../../utils/activityUtils');
 
-const ACTIVITY_THRESHOLD_PERCENTAGE = 10; // 10% of top 10 average
+const ACTIVITY_THRESHOLD_PERCENTAGE = 5; // 5% of top 10 average
 
 module.exports = new Command({
     name: 'presencecheck',
@@ -52,188 +53,71 @@ module.exports = new Command({
             }
 
             // Get the appropriate date and table based on period 
-            let date;
-            let table;
-            let dateField;
-            let stats = [];
-            let isPartialData = false;
+            let startDate;
+            let title;
 
             switch (normalizedPeriod) {
                 case 'daily':
-                    date = new Date();
-                    date.setHours(0, 0, 0, 0);
-                    table = 'dailyActivity';
-                    dateField = 'date';
+                    startDate = new Date();
+                    startDate.setHours(0, 0, 0, 0);
+                    title = 'Daily Activity Check';
                     break;
                 case 'weekly':
-                    date = getWeekStart(new Date());
-                    table = 'weeklyActivity';
-                    dateField = 'weekStart';
+                    startDate = getWeekStart(new Date());
+                    title = 'Weekly Activity Check';
                     break;
                 case 'monthly':
-                    date = getMonthStart(new Date());
-                    table = 'monthlyActivity';
-                    dateField = 'monthStart';
+                    startDate = getMonthStart(new Date());
+                    title = 'Monthly Activity Check';
                     break;
             }
 
-            // Get all members with the role
+            // Get role members
             const members = role.members;
-            if (!members.size) {
-                const response = 'No members found with this role.';
-                if (isSlash) {
-                    await message.reply({ content: response, ephemeral: true });
-                } else {
-                    await message.reply(response);
-                }
-                return;
-            }
 
-            // First try to get aggregated stats
-            stats = await prisma[table].findMany({
-                where: {
-                    guildId: message.guild.id,
-                    [dateField]: date,
-                    userId: {
-                        in: [...members.keys()]
-                    }
-                }
-            });
-
-            // For weekly and monthly periods, try to aggregate missing data
-            if (normalizedPeriod !== 'daily') {
-                let additionalStats = [];
-                const periodStart = normalizedPeriod === 'weekly' ? getWeekStart(new Date()) : getMonthStart(new Date());
-                const nextPeriod = new Date(periodStart);
-                if (normalizedPeriod === 'weekly') {
-                    nextPeriod.setDate(nextPeriod.getDate() + 7);
-                } else {
-                    nextPeriod.setMonth(nextPeriod.getMonth() + 1);
-                }
-
-                // For monthly, try weekly data first
-                if (normalizedPeriod === 'monthly') {
-                    const weeklyStats = await prisma.weeklyActivity.findMany({
-                        where: {
-                            guildId: message.guild.id,
-                            userId: {
-                                in: [...members.keys()]
-                            },
-                            weekStart: {
-                                gte: periodStart,
-                                lt: nextPeriod
-                            }
-                        }
+            // Get activity data
+            const activityData = await Promise.all(
+                Array.from(members.values()).map(async (member) => {
+                    const { data: stats } = await fetchActivityData({
+                        userId: member.id,
+                        guildId: message.guild.id,
+                        period,
+                        startDate
                     });
-
-                    if (weeklyStats.length > 0) {
-                        isPartialData = true;
-                        additionalStats = weeklyStats;
-                    }
-                }
-
-                // If still no data (or for weekly period), try daily data
-                if (additionalStats.length === 0) {
-                    const dailyStats = await prisma.dailyActivity.findMany({
-                        where: {
-                            guildId: message.guild.id,
-                            userId: {
-                                in: [...members.keys()]
-                            },
-                            date: {
-                                gte: periodStart,
-                                lt: nextPeriod
-                            }
-                        }
-                    });
-
-                    if (dailyStats.length > 0) {
-                        isPartialData = true;
-                        additionalStats = dailyStats;
-                    }
-                }
-
-                // Merge additional stats with existing stats
-                if (additionalStats.length > 0) {
-                    const mergedStats = new Map();
                     
-                    // Process existing stats
-                    stats.forEach(stat => {
-                        mergedStats.set(stat.userId, {
-                            userId: stat.userId,
-                            voiceTimeSeconds: stat.voiceTimeSeconds || 0,
-                            afkTimeSeconds: stat.afkTimeSeconds || 0,
-                            mutedDeafenedTimeSeconds: stat.mutedDeafenedTimeSeconds || 0,
-                            messageCount: stat.messageCount || 0
-                        });
-                    });
+                    return {
+                        member,
+                        stats
+                    };
+                })
+            );
 
-                    // Add or merge additional stats
-                    additionalStats.forEach(stat => {
-                        const existing = mergedStats.get(stat.userId) || {
-                            userId: stat.userId,
-                            voiceTimeSeconds: 0,
-                            afkTimeSeconds: 0,
-                            mutedDeafenedTimeSeconds: 0,
-                            messageCount: 0
-                        };
+            // Calculate threshold from top performers
+            const validData = activityData.filter(data => data.stats !== null);
+            const topPerformers = validData
+                .sort((a, b) => (b.stats?.voiceTimeSeconds || 0) - (a.stats?.voiceTimeSeconds || 0))
+                .slice(0, 10);
 
-                        mergedStats.set(stat.userId, {
-                            userId: stat.userId,
-                            voiceTimeSeconds: existing.voiceTimeSeconds + (stat.voiceTimeSeconds || 0),
-                            afkTimeSeconds: existing.afkTimeSeconds + (stat.afkTimeSeconds || 0),
-                            mutedDeafenedTimeSeconds: existing.mutedDeafenedTimeSeconds + (stat.mutedDeafenedTimeSeconds || 0),
-                            messageCount: existing.messageCount + (stat.messageCount || 0)
-                        });
-                    });
+            const topAvgVoiceTime = topPerformers.reduce((sum, data) =>
+                sum + (data.stats?.voiceTimeSeconds || 0), 0) / (topPerformers.length || 1);
 
-                    stats = Array.from(mergedStats.values());
-                }
-            }
+            const minimumThreshold = topAvgVoiceTime * (ACTIVITY_THRESHOLD_PERCENTAGE / 100);
 
-            // Process and identify inactive members
-            const memberActivities = [...members.values()].map(member => {
-                const activity = stats.find(s => s.userId === member.id);
-                const totalTime = activity?.voiceTimeSeconds || 0;
-                const afkTime = activity?.afkTimeSeconds || 0;
-                const activeTime = totalTime - afkTime; // Simplified calculation like presenceleaderboard
-
-                return {
-                    member,
-                    activeTime,
-                    totalTime,
-                    afkTime,
-                    messageCount: activity?.messageCount || 0
-                };
-            });
-
-            // Calculate top 10 average activity
-            const sortedStats = memberActivities
-                .sort((a, b) => b.activeTime - a.activeTime);
-
-            const top10Stats = sortedStats.slice(0, 10);
-            const top10Average = top10Stats.length > 0 
-                ? top10Stats.reduce((sum, stat) => sum + stat.activeTime, 0) / top10Stats.length
-                : 0;
-
-            const activityThreshold = top10Average * (ACTIVITY_THRESHOLD_PERCENTAGE / 100);
-
-            // Filter only inactive members and sort by activity percentage
-            const inactiveMembers = memberActivities
-                .filter(m => m.activeTime < activityThreshold)
-                .sort((a, b) => b.activeTime - a.activeTime);
-
-            if (inactiveMembers.length === 0) {
-                const allActiveEmbed = new EmbedBuilder()
-                    .setColor(0x00FF00)
-                    .setDescription('✅ All members are active!');
-
-                await message.reply({ 
-                    embeds: [allActiveEmbed],
-                    ephemeral: isSlash
-                });
-                return;
-            }
+            // Find inactive members
+            const inactiveMembers = validData
+                .filter(data => (data.stats?.voiceTimeSeconds || 0) < minimumThreshold)
+                .map(data => {
+                    const voiceTime = data.stats?.voiceTimeSeconds || 0;
+                    const percentage = ((voiceTime / topAvgVoiceTime) * 100).toFixed(1);
+                    
+                    return {
+                        member: data.member,
+                        voiceTime,
+                        percentage,
+                        displayName: data.member.displayName || data.member.user.username
+                    };
+                })
+                .sort((a, b) => b.voiceTime - a.voiceTime);
 
             // Setup pagination
             const itemsPerPage = 10;
@@ -247,23 +131,13 @@ module.exports = new Command({
                 const pageMembers = inactiveMembers.slice(start, end);
 
                 return new EmbedBuilder()
-                    .setColor(0xFF0000)
-                    .setTitle(`Inactive Members (Page ${page + 1}/${pages})`)
-                    .setDescription([
-                        isPartialData ? '⚠️ **Note:** Some data is aggregated from daily/weekly records.' : '',
-                        pageMembers.map(({ member, activeTime, totalTime, afkTime, messageCount }) => {
-                            const activePercentage = top10Average > 0 
-                                ? Math.round((activeTime / top10Average) * 100)
-                                : 0;
-                            
-                            const details = totalTime > 0 || afkTime > 0
-                                ? `Voice: \`${formatDuration(totalTime)}\` (${activePercentage}% of top avg) • AFK: \`${formatDuration(afkTime)}\` • Messages: \`${messageCount}\``
-                                : '`No activity recorded`';
-                            return `🔴 ${member.toString()} - ${details}`;
-                        }).join('\n')
-                    ].filter(Boolean).join('\n'))
+                    .setTitle(`${title} - ${role.name}`)
+                    .setColor('#FF4444')
+                    .setDescription(pageMembers.map(({ displayName, voiceTime, percentage }) =>
+                        `${displayName}\n• Voice Time: ${formatDuration(voiceTime)}\n• Activity: ${percentage}% of top average`
+                    ).join('\n\n'))
                     .setFooter({ 
-                        text: `Required Active Time: ${formatDuration(activityThreshold)} • Total inactive: ${inactiveMembers.length}` 
+                        text: `Required Active Time: ${formatDuration(minimumThreshold)} • Total inactive: ${inactiveMembers.length}` 
                     });
             };
 

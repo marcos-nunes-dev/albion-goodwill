@@ -2,7 +2,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentTyp
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
 const { formatDuration, getWeekStart, getMonthStart } = require('../../utils/timeUtils');
-const { processActivityRecords, calculateActivityDistribution } = require('../../utils/activityUtils');
+const { processActivityRecords, calculateActivityDistribution, fetchActivityData } = require('../../utils/activityUtils');
 
 module.exports = new Command({
     name: 'presenceleaderboard',
@@ -51,70 +51,43 @@ module.exports = new Command({
 
             // Get the appropriate date and table based on period
             let date = new Date();
-            let table;
-            let dateField;
-            let stats = [];
+            let startDate;
+            let title;
 
             switch (period) {
                 case 'daily':
                     date.setHours(0, 0, 0, 0);
-                    table = 'dailyActivity';
-                    dateField = 'date';
+                    startDate = date;
                     break;
                 case 'weekly':
-                    date = getWeekStart(new Date());
-                    table = 'weeklyActivity';
-                    dateField = 'weekStart';
+                    startDate = getWeekStart(new Date());
                     break;
                 case 'monthly':
-                    date = getMonthStart(new Date());
-                    table = 'monthlyActivity';
-                    dateField = 'monthStart';
+                    startDate = getMonthStart(new Date());
                     break;
             }
 
             // Validate date before querying
-            if (!(date instanceof Date) || isNaN(date)) {
+            if (!(startDate instanceof Date) || isNaN(startDate)) {
                 throw new Error('Invalid date generated');
             }
 
-            // First try to get aggregated stats
-            stats = await prisma[table].findMany({
-                where: {
-                    guildId: message.guild.id,
-                    [dateField]: date
-                }
+            // Get activity data using fetchActivityData
+            const { data: stats } = await fetchActivityData({
+                guildId: message.guild.id,
+                period,
+                startDate
             });
 
-            // If no monthly stats found, aggregate from daily data
-            if (stats.length === 0 && period === 'monthly') {
-                const monthStart = getMonthStart(new Date());
-                const nextMonth = new Date(monthStart);
-                nextMonth.setMonth(nextMonth.getMonth() + 1);
+            if (!stats || !stats.length) {
+                const noStatsEmbed = new EmbedBuilder()
+                    .setColor(0xFF0000)
+                    .setTitle('📊 Activity Leaderboard')
+                    .setDescription(`No activity recorded for this ${period} period.`)
+                    .setFooter({ text: 'Try joining a voice channel or sending messages!' });
 
-                stats = await prisma.dailyActivity.groupBy({
-                    by: ['userId'],
-                    where: {
-                        guildId: message.guild.id,
-                        date: {
-                            gte: monthStart,
-                            lt: nextMonth
-                        }
-                    },
-                    _sum: {
-                        voiceTimeSeconds: true,
-                        afkTimeSeconds: true,
-                        messageCount: true
-                    }
-                });
-
-                // Transform grouped data to match regular stats format
-                stats = stats.map(stat => ({
-                    userId: stat.userId,
-                    voiceTimeSeconds: stat._sum.voiceTimeSeconds || 0,
-                    afkTimeSeconds: stat._sum.afkTimeSeconds || 0,
-                    messageCount: stat._sum.messageCount || 0
-                }));
+                await reply({ embeds: [noStatsEmbed] });
+                return;
             }
 
             // Process and sort all members
@@ -160,13 +133,13 @@ module.exports = new Command({
 
             // Create page embed function
             const getPageEmbed = (page) => {
-                const start = page * itemsPerPage;
-                const end = Math.min(start + itemsPerPage, validEntries.length);
+                const start = page * 10;
+                const end = Math.min(start + 10, validEntries.length);
                 const pageMembers = validEntries.slice(start, end);
 
                 return new EmbedBuilder()
                     .setColor(0x0099FF)
-                    .setTitle(`Activity Ranking (Page ${page + 1}/${pages})`)
+                    .setTitle(`Activity Ranking (Page ${page + 1}/${Math.ceil(validEntries.length / 10)})`)
                     .setDescription(
                         pageMembers.map(({ member, activeTime, messageCount, activePercentage }, index) => {
                             const position = start + index + 1;
@@ -181,8 +154,6 @@ module.exports = new Command({
             };
 
             // Initialize pagination
-            const itemsPerPage = 10;
-            const pages = Math.ceil(validEntries.length / itemsPerPage);
             let currentPage = 0;
 
             // Create navigation buttons
@@ -202,12 +173,12 @@ module.exports = new Command({
                         .setCustomId('next')
                         .setLabel('Next ▶️')
                         .setStyle(ButtonStyle.Primary)
-                        .setDisabled(currentPage === pages - 1),
+                        .setDisabled(currentPage === Math.ceil(validEntries.length / 10) - 1),
                     new ButtonBuilder()
                         .setCustomId('last')
                         .setLabel('Last ⏩')
                         .setStyle(ButtonStyle.Primary)
-                        .setDisabled(currentPage === pages - 1)
+                        .setDisabled(currentPage === Math.ceil(validEntries.length / 10) - 1)
                 );
             };
 
@@ -251,10 +222,10 @@ module.exports = new Command({
                         currentPage = Math.max(0, currentPage - 1);
                         break;
                     case 'next':
-                        currentPage = Math.min(pages - 1, currentPage + 1);
+                        currentPage = Math.min(Math.ceil(validEntries.length / 10) - 1, currentPage + 1);
                         break;
                     case 'last':
-                        currentPage = pages - 1;
+                        currentPage = Math.ceil(validEntries.length / 10) - 1;
                         break;
                 }
 

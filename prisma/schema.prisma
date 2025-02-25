@@ -26,38 +26,6 @@ model DailyActivity {
   @@map("daily_activity")
 }
 
-model WeeklyActivity {
-  id                        String   @id @default(uuid())
-  userId                    String
-  guildId                   String
-  username                  String
-  weekStart                 DateTime @db.Date
-  messageCount              Int      @default(0)
-  voiceTimeSeconds          Int      @default(0)
-  afkTimeSeconds            Int      @default(0)
-  mutedDeafenedTimeSeconds  Int      @default(0)
-  lastUpdated              DateTime @default(now()) @db.Timestamptz
-
-  @@unique([userId, guildId, weekStart], map: "weekly_activity_user_guild_week")
-  @@map("weekly_activity")
-}
-
-model MonthlyActivity {
-  id                        String   @id @default(uuid())
-  userId                    String
-  guildId                   String
-  username                  String
-  monthStart                DateTime @db.Date
-  messageCount              Int      @default(0)
-  voiceTimeSeconds          Int      @default(0)
-  afkTimeSeconds            Int      @default(0)
-  mutedDeafenedTimeSeconds  Int      @default(0)
-  lastUpdated              DateTime @default(now()) @db.Timestamptz
-
-  @@unique([userId, guildId, monthStart], map: "monthly_activity_user_guild_month")
-  @@map("monthly_activity")
-}
-
 model VoiceSession {
   id                  String   @id @default(uuid())
   userId              String
@@ -110,4 +78,4 @@ model PlayerRegistration {
   @@index([guildId])
   @@index([userId])
   @@map("player_registrations")
-} 
+}

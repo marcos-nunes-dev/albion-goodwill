@@ -30,119 +30,63 @@ function calculateActivityStats(activityData) {
 }
 
 /**
- * Fetches activity data with fallback to lower granularity data
+ * Fetches activity data for a specific period from daily activities
  * @param {Object} params - Parameters for fetching activity data
  * @param {string} params.userId - User ID to fetch data for
  * @param {string} params.guildId - Guild ID to fetch data for
  * @param {string} params.period - Period to fetch data for ('daily', 'weekly', 'monthly')
  * @param {Date} params.startDate - Start date for the period
- * @returns {Promise<{data: Object, isPartialData: boolean}>} Activity data and whether it's partial
+ * @returns {Promise<{data: Object}>} Aggregated activity data
  */
 async function fetchActivityData({ userId, guildId, period, startDate }) {
-    let stats = null;
-    let isPartialData = false;
-
-    // Try to get data from the primary granularity
+    const endDate = new Date(startDate);
+    
+    // Calculate end date based on period
     switch (period) {
-        case 'daily': {
-            stats = await prisma.dailyActivity.findUnique({
-                where: {
-                    userId_guildId_date: {
-                        userId,
-                        guildId,
-                        date: startDate
-                    }
-                }
-            });
+        case 'monthly':
+            endDate.setMonth(endDate.getMonth() + 1);
             break;
-        }
-        case 'weekly': {
-            stats = await prisma.weeklyActivity.findUnique({
-                where: {
-                    userId_guildId_weekStart: {
-                        userId,
-                        guildId,
-                        weekStart: startDate
-                    }
-                }
-            });
+        case 'weekly':
+            endDate.setDate(endDate.getDate() + 7);
             break;
-        }
-        case 'monthly': {
-            stats = await prisma.monthlyActivity.findUnique({
-                where: {
-                    userId_guildId_monthStart: {
-                        userId,
-                        guildId,
-                        monthStart: startDate
-                    }
-                }
-            });
+        case 'daily':
+            endDate.setDate(endDate.getDate() + 1);
             break;
-        }
     }
 
-    // If no data found, try lower granularity
-    if (!stats) {
-        const endDate = new Date(startDate);
-        switch (period) {
-            case 'monthly': {
-                // Try weekly data first
-                endDate.setMonth(endDate.getMonth() + 1);
-                const weeklyStats = await prisma.weeklyActivity.findMany({
-                    where: {
-                        userId,
-                        guildId,
-                        weekStart: {
-                            gte: startDate,
-                            lt: endDate
-                        }
-                    }
-                });
-
-                if (weeklyStats.length > 0) {
-                    isPartialData = true;
-                    stats = weeklyStats.reduce((acc, curr) => ({
-                        voiceTimeSeconds: (acc.voiceTimeSeconds || 0) + curr.voiceTimeSeconds,
-                        afkTimeSeconds: (acc.afkTimeSeconds || 0) + curr.afkTimeSeconds,
-                        mutedDeafenedTimeSeconds: (acc.mutedDeafenedTimeSeconds || 0) + curr.mutedDeafenedTimeSeconds,
-                        messageCount: (acc.messageCount || 0) + curr.messageCount
-                    }), {});
-                    break;
-                }
-                // If no weekly data, fall through to try daily data
+    // Get all daily activities for the period
+    const dailyStats = await prisma.dailyActivity.groupBy({
+        by: ['userId', 'guildId', 'username'],
+        where: {
+            userId,
+            guildId,
+            date: {
+                gte: startDate,
+                lt: endDate
             }
-            case 'weekly': {
-                // For weekly or if monthly had no weekly data
-                if (period === 'weekly') {
-                    endDate.setDate(endDate.getDate() + 7);
-                }
-                const dailyStats = await prisma.dailyActivity.findMany({
-                    where: {
-                        userId,
-                        guildId,
-                        date: {
-                            gte: startDate,
-                            lt: endDate
-                        }
-                    }
-                });
-
-                if (dailyStats.length > 0) {
-                    isPartialData = true;
-                    stats = dailyStats.reduce((acc, curr) => ({
-                        voiceTimeSeconds: (acc.voiceTimeSeconds || 0) + curr.voiceTimeSeconds,
-                        afkTimeSeconds: (acc.afkTimeSeconds || 0) + curr.afkTimeSeconds,
-                        mutedDeafenedTimeSeconds: (acc.mutedDeafenedTimeSeconds || 0) + curr.mutedDeafenedTimeSeconds,
-                        messageCount: (acc.messageCount || 0) + curr.messageCount
-                    }), {});
-                }
-                break;
-            }
+        },
+        _sum: {
+            messageCount: true,
+            voiceTimeSeconds: true,
+            afkTimeSeconds: true,
+            mutedDeafenedTimeSeconds: true
         }
+    });
+
+    // If no data found, return null
+    if (dailyStats.length === 0) {
+        return { data: null };
     }
 
-    return { data: stats, isPartialData };
+    // Convert the aggregated data to match our expected format
+    const stats = {
+        voiceTimeSeconds: dailyStats[0]._sum.voiceTimeSeconds || 0,
+        afkTimeSeconds: dailyStats[0]._sum.afkTimeSeconds || 0,
+        mutedDeafenedTimeSeconds: dailyStats[0]._sum.mutedDeafenedTimeSeconds || 0,
+        messageCount: dailyStats[0]._sum.messageCount || 0
+    };
+
+    return { data: stats };
 }
 
 /**
