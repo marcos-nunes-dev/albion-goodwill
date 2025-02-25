@@ -1,7 +1,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const Command = require('../../structures/Command');
 const { formatDuration, getWeekStart, getMonthStart } = require('../../utils/timeUtils');
-const { fetchActivityData } = require('../../utils/activityUtils');
+const { calculateActivityStats, fetchActivityData } = require('../../utils/activityUtils');
 
 const ACTIVITY_THRESHOLD_PERCENTAGE = 5; // 5% of top 10 average
 const ITEMS_PER_PAGE = 10;
@@ -102,7 +102,7 @@ module.exports = new Command({
                     
                     return {
                         member,
-                        stats
+                        stats: stats || null // Ensure we have a null if no stats
                     };
                 })
             );
@@ -118,23 +118,33 @@ module.exports = new Command({
 
             const minimumThreshold = topAvgVoiceTime * (ACTIVITY_THRESHOLD_PERCENTAGE / 100);
 
-            // Find inactive members
-            const inactiveMembers = validData
-                .filter(data => (data.stats?.voiceTimeSeconds || 0) < minimumThreshold)
+            // Process all members
+            const memberStats = activityData
                 .map(data => {
-                    const voiceTime = data.stats?.voiceTimeSeconds || 0;
+                    const stats = data.stats;
+                    const voiceTime = stats?.voiceTimeSeconds || 0;
+                    const afkTime = stats?.afkTimeSeconds || 0;
                     const percentage = ((voiceTime / topAvgVoiceTime) * 100).toFixed(1);
                     
                     return {
                         member: data.member,
                         voiceTime,
+                        afkTime,
                         percentage,
-                        displayName: data.member.displayName || data.member.user.username
+                        displayName: data.member.displayName || data.member.user.username,
+                        hasData: stats !== null,
+                        isActive: voiceTime >= minimumThreshold
                     };
                 })
-                .sort((a, b) => b.voiceTime - a.voiceTime);
+                // Filter out active members
+                .filter(member => !member.isActive)
+                .sort((a, b) => {
+                    // Sort by data presence first, then by voice time
+                    if (a.hasData !== b.hasData) return b.hasData - a.hasData;
+                    return b.voiceTime - a.voiceTime;
+                });
 
-            if (inactiveMembers.length === 0) {
+            if (memberStats.length === 0) {
                 const embed = new EmbedBuilder()
                     .setTitle(`${title} - ${role.name}`)
                     .setColor(0x00FF00)
@@ -150,23 +160,40 @@ module.exports = new Command({
             }
 
             // Setup pagination
-            const totalPages = Math.ceil(inactiveMembers.length / ITEMS_PER_PAGE);
+            const totalPages = Math.ceil(memberStats.length / ITEMS_PER_PAGE);
             let currentPage = 0;
 
             // Create page embed
             const getPageEmbed = (page) => {
                 const start = page * ITEMS_PER_PAGE;
-                const end = Math.min(start + ITEMS_PER_PAGE, inactiveMembers.length);
-                const pageMembers = inactiveMembers.slice(start, end);
+                const end = Math.min(start + ITEMS_PER_PAGE, memberStats.length);
+                const pageMembers = memberStats.slice(start, end);
+
+                const description = pageMembers.map(({ displayName, voiceTime, afkTime, percentage, hasData }) => {
+                    if (!hasData) {
+                        return `${displayName}\n❌ No activity data recorded`;
+                    }
+
+                    return `${displayName} ⚠️\n` +
+                           `• Voice Time: \`${formatDuration(voiceTime)}\`\n` +
+                           `• AFK Time: \`${formatDuration(afkTime)}\`\n` +
+                           `• Activity: \`${percentage}%\` of top average`;
+                }).join('\n\n');
+
+                const totalMembers = role.members.size;
+                const activeCount = activityData.filter(d => (d.stats?.voiceTimeSeconds || 0) >= minimumThreshold).length;
+                const noDataCount = memberStats.filter(m => !m.hasData).length;
+                const inactiveCount = memberStats.length - noDataCount;
 
                 return new EmbedBuilder()
                     .setTitle(`${title} - ${role.name}`)
                     .setColor(0xFF4444)
-                    .setDescription(pageMembers.map(({ displayName, voiceTime, percentage }) =>
-                        `${displayName}\n• Voice Time: \`${formatDuration(voiceTime)}\`\n• Activity: \`${percentage}%\` of top average`
-                    ).join('\n\n'))
+                    .setDescription(description)
                     .setFooter({ 
-                        text: `Required Active Time: ${formatDuration(minimumThreshold)} • Total inactive: ${inactiveMembers.length} • Page ${page + 1}/${totalPages}` 
+                        text: `Required Active Time: ${formatDuration(minimumThreshold)} • ` +
+                             `Total Members: ${totalMembers} • Active: ${activeCount} • ` +
+                             `Inactive: ${inactiveCount} • No Data: ${noDataCount} • ` +
+                             `Page ${page + 1}/${totalPages}` 
                     })
                     .setTimestamp();
             };
