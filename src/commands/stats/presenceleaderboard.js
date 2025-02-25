@@ -76,7 +76,8 @@ module.exports = new Command({
             const { data: stats } = await fetchActivityData({
                 guildId: message.guild.id,
                 period,
-                startDate
+                startDate,
+                includeAllMembers: true
             });
 
             if (!stats || !stats.length) {
@@ -92,11 +93,17 @@ module.exports = new Command({
 
             // Process and sort all members
             const validEntries = await processActivityRecords(stats, async (userId) => {
-                return await message.guild.members.fetch(userId);
+                try {
+                    return await message.guild.members.fetch(userId);
+                } catch (error) {
+                    console.error(`Failed to fetch member ${userId}:`, error);
+                    return null;
+                }
             });
 
-            // Filter out inactive members and sort by active time
-            const activeEntries = validEntries.filter(entry => entry.activeTime > 0)
+            // Filter out null entries and inactive members, then sort by active time
+            const activeEntries = validEntries
+                .filter(entry => entry && entry.member && entry.activeTime > 0)
                 .sort((a, b) => b.activeTime - a.activeTime);
 
             if (activeEntries.length === 0) {
@@ -178,6 +185,8 @@ module.exports = new Command({
                 componentType: ComponentType.Button,
                 time: 300000 // 5 minutes
             });
+
+            let currentPage = 0;
 
             collector.on('collect', async (interaction) => {
                 // Check if the interaction is from the command user

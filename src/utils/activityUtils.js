@@ -36,9 +36,10 @@ function calculateActivityStats(activityData) {
  * @param {string} params.guildId - Guild ID to fetch data for
  * @param {string} params.period - Period to fetch data for ('daily', 'weekly', 'monthly')
  * @param {Date} params.startDate - Start date for the period
- * @returns {Promise<{data: Object}>} Aggregated activity data
+ * @param {boolean} [params.includeAllMembers=false] - Whether to include all members or not
+ * @returns {Promise<{data: Object|Array}>} Aggregated activity data
  */
-async function fetchActivityData({ userId, guildId, period, startDate }) {
+async function fetchActivityData({ userId, guildId, period, startDate, includeAllMembers = false }) {
     const endDate = new Date(startDate);
     
     // Calculate end date based on period
@@ -54,17 +55,24 @@ async function fetchActivityData({ userId, guildId, period, startDate }) {
             break;
     }
 
+    // Build the where clause
+    const whereClause = {
+        guildId,
+        date: {
+            gte: startDate,
+            lt: endDate
+        }
+    };
+
+    // Add userId to where clause if not including all members
+    if (!includeAllMembers && userId) {
+        whereClause.userId = userId;
+    }
+
     // Get all daily activities for the period
     const dailyStats = await prisma.dailyActivity.groupBy({
-        by: ['userId', 'guildId', 'username'],
-        where: {
-            userId,
-            guildId,
-            date: {
-                gte: startDate,
-                lt: endDate
-            }
-        },
+        by: ['userId'],
+        where: whereClause,
         _sum: {
             messageCount: true,
             voiceTimeSeconds: true,
@@ -73,17 +81,30 @@ async function fetchActivityData({ userId, guildId, period, startDate }) {
         }
     });
 
-    // If no data found, return null
-    if (dailyStats.length === 0) {
+    // If no data found and specific user requested
+    if (!includeAllMembers && dailyStats.length === 0) {
         return { data: null };
     }
 
-    // Convert the aggregated data to match our expected format
+    // For leaderboard (all members), return array of stats
+    if (includeAllMembers) {
+        return {
+            data: dailyStats.map(stat => ({
+                userId: stat.userId,
+                voiceTimeSeconds: stat._sum.voiceTimeSeconds || 0,
+                afkTimeSeconds: stat._sum.afkTimeSeconds || 0,
+                mutedDeafenedTimeSeconds: stat._sum.mutedDeafenedTimeSeconds || 0,
+                messageCount: stat._sum.messageCount || 0
+            }))
+        };
+    }
+
+    // For single user, return single stat object
     const stats = {
-        voiceTimeSeconds: dailyStats[0]._sum.voiceTimeSeconds || 0,
-        afkTimeSeconds: dailyStats[0]._sum.afkTimeSeconds || 0,
-        mutedDeafenedTimeSeconds: dailyStats[0]._sum.mutedDeafenedTimeSeconds || 0,
-        messageCount: dailyStats[0]._sum.messageCount || 0
+        voiceTimeSeconds: dailyStats[0]?._sum.voiceTimeSeconds || 0,
+        afkTimeSeconds: dailyStats[0]?._sum.afkTimeSeconds || 0,
+        mutedDeafenedTimeSeconds: dailyStats[0]?._sum.mutedDeafenedTimeSeconds || 0,
+        messageCount: dailyStats[0]?._sum.messageCount || 0
     };
 
     return { data: stats };
@@ -96,23 +117,48 @@ async function fetchActivityData({ userId, guildId, period, startDate }) {
  * @returns {Promise<Array>} Sorted array of processed activity records with member data
  */
 async function processActivityRecords(activityRecords, getMember) {
+    if (!Array.isArray(activityRecords)) {
+        console.error('processActivityRecords: activityRecords is not an array');
+        return [];
+    }
+
     // Process all records
     const processedRecords = await Promise.all(
         activityRecords.map(async (record) => {
-            const member = await getMember(record.userId).catch(() => null);
+            if (!record || !record.userId) {
+                console.error('processActivityRecords: Invalid record:', record);
+                return null;
+            }
+
+            const member = await getMember(record.userId).catch((error) => {
+                console.error(`Failed to fetch member ${record.userId}:`, error);
+                return null;
+            });
+            
             if (!member) return null;
 
-            const stats = calculateActivityStats(record);
+            // Calculate active time (total - afk)
+            const totalTime = Math.max(0, record.voiceTimeSeconds || 0);
+            const afkTime = Math.max(0, Math.min(totalTime, record.afkTimeSeconds || 0));
+            const mutedTime = Math.max(0, record.mutedDeafenedTimeSeconds || 0);
+            const activeTime = Math.max(0, totalTime - afkTime);
+            const messageCount = Math.max(0, record.messageCount || 0);
+
             return {
                 member,
-                ...stats
+                stats: record,
+                totalTime,
+                activeTime,
+                afkTime,
+                mutedTime,
+                messageCount
             };
         })
     );
 
     // Filter out null entries and sort by active time
     return processedRecords
-        .filter(entry => entry !== null)
+        .filter(entry => entry !== null && entry.activeTime > 0)
         .sort((a, b) => b.activeTime - a.activeTime);
 }
 
