@@ -76,10 +76,10 @@ module.exports = new Command({
                     `${activityStats.isActive ? '✅ Active' : '⚠️ Inactive'}`,
                     '',
                     '🎙️ **Voice Activity**',
-                    `• Total Time: \`${formatDuration(activityStats.totalTime)}\``,
-                    `• Active Time: \`${formatDuration(activityStats.activeTime)}\``,
-                    `• AFK Time: \`${formatDuration(activityStats.afkTime)}\``,
-                    `• Muted Time: \`${formatDuration(activityStats.mutedTime)}\``,
+                    `• Total Time: \`${formatDuration(activityStats.totalTime || 0)}\``,
+                    `• Active Time: \`${formatDuration(activityStats.activeTime || 0)}\``,
+                    `• AFK Time: \`${formatDuration(activityStats.afkTime || 0)}\``,
+                    `• Muted Time: \`${formatDuration(activityStats.mutedTime || 0)}\``,
                     `• Activity: \`${activityStats.activePercentage || 0}%\` of requirement`,
                     '',
                     '📊 **Time Distribution**',
@@ -91,7 +91,7 @@ module.exports = new Command({
                     '💬 **Messages**',
                     `• Total: \`${activityStats.messageCount || 0}\``,
                     '',
-                    `Required Active Time: \`${formatDuration(activityStats.requiredTime)}\``
+                    `Required Active Time: \`${formatDuration(activityStats.requiredTime || 0)}\``
                 ].join('\n');
 
                 embed.setDescription(description);
