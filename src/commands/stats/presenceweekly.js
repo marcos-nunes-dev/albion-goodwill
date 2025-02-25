@@ -60,9 +60,10 @@ module.exports = new Command({
                 // Create progress bar for active/AFK/muted distribution
                 const progressBarLength = 20;
                 const totalTime = activityStats.totalTime || 1; // Prevent division by zero
+                const mutedTime = stats?.mutedDeafenedTimeSeconds || 0;
                 const activePercent = Math.round((activityStats.activeTime / totalTime) * 100) || 0;
                 const afkPercent = Math.round((activityStats.afkTime / totalTime) * 100) || 0;
-                const mutedPercent = Math.round((activityStats.mutedTime / totalTime) * 100) || 0;
+                const mutedPercent = Math.round((mutedTime / totalTime) * 100) || 0;
 
                 // Ensure percentages add up to 100%
                 const totalPercent = activePercent + afkPercent + mutedPercent;
@@ -79,7 +80,7 @@ module.exports = new Command({
                     `• Total Time: \`${formatDuration(activityStats.totalTime || 0)}\``,
                     `• Active Time: \`${formatDuration(activityStats.activeTime || 0)}\``,
                     `• AFK Time: \`${formatDuration(activityStats.afkTime || 0)}\``,
-                    `• Muted Time: \`${formatDuration(activityStats.mutedTime || 0)}\``,
+                    `• Muted Time: \`${formatDuration(mutedTime)}\``,
                     `• Activity: \`${activityStats.activePercentage || 0}%\` of requirement`,
                     '',
                     '📊 **Time Distribution**',
@@ -89,9 +90,7 @@ module.exports = new Command({
                     `• Muted: \`${mutedPercent}%\``,
                     '',
                     '💬 **Messages**',
-                    `• Total: \`${activityStats.messageCount || 0}\``,
-                    '',
-                    `Required Active Time: \`${formatDuration(activityStats.requiredTime || 0)}\``
+                    `• Total: \`${activityStats.messageCount || 0}\``
                 ].join('\n');
 
                 embed.setDescription(description);
