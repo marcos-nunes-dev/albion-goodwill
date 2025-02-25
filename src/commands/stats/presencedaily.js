@@ -61,8 +61,14 @@ module.exports = new Command({
                 // Create progress bar for active/AFK/muted distribution
                 const progressBarLength = 20;
                 const totalTime = activityStats.totalTime || 1; // Prevent division by zero
-                const activeBlocks = Math.round((activityStats.activeTime / totalTime) * progressBarLength);
-                const afkBlocks = Math.round((activityStats.afkTime / totalTime) * progressBarLength);
+                const activePercent = Math.round((activityStats.activeTime / totalTime) * 100) || 0;
+                const afkPercent = Math.round((activityStats.afkTime / totalTime) * 100) || 0;
+                const mutedPercent = Math.round((activityStats.mutedTime / totalTime) * 100) || 0;
+
+                // Ensure percentages add up to 100%
+                const totalPercent = activePercent + afkPercent + mutedPercent;
+                const activeBlocks = Math.round((activePercent / 100) * progressBarLength) || 0;
+                const afkBlocks = Math.round((afkPercent / 100) * progressBarLength) || 0;
                 const mutedBlocks = progressBarLength - activeBlocks - afkBlocks;
 
                 const progressBar = '🟩'.repeat(activeBlocks) + '🟨'.repeat(afkBlocks) + '🟥'.repeat(mutedBlocks);
@@ -75,16 +81,16 @@ module.exports = new Command({
                     `• Active Time: \`${formatDuration(activityStats.activeTime)}\``,
                     `• AFK Time: \`${formatDuration(activityStats.afkTime)}\``,
                     `• Muted Time: \`${formatDuration(activityStats.mutedTime)}\``,
-                    `• Activity: \`${activityStats.activePercentage}%\` of requirement`,
+                    `• Activity: \`${activityStats.activePercentage || 0}%\` of requirement`,
                     '',
                     '📊 **Time Distribution**',
                     progressBar,
-                    `• Active: \`${Math.round((activityStats.activeTime / totalTime) * 100)}%\``,
-                    `• AFK: \`${Math.round((activityStats.afkTime / totalTime) * 100)}%\``,
-                    `• Muted: \`${Math.round((activityStats.mutedTime / totalTime) * 100)}%\``,
+                    `• Active: \`${activePercent}%\``,
+                    `• AFK: \`${afkPercent}%\``,
+                    `• Muted: \`${mutedPercent}%\``,
                     '',
                     '💬 **Messages**',
-                    `• Total: \`${activityStats.messageCount}\``,
+                    `• Total: \`${activityStats.messageCount || 0}\``,
                     '',
                     `Required Active Time: \`${formatDuration(activityStats.requiredTime)}\``
                 ].join('\n');

@@ -125,14 +125,15 @@ module.exports = new Command({
                     const voiceTime = stats?.voiceTimeSeconds || 0;
                     const afkTime = stats?.afkTimeSeconds || 0;
                     const mutedTime = stats?.mutedDeafenedTimeSeconds || 0;
-                    const percentage = ((voiceTime / topAvgVoiceTime) * 100).toFixed(1);
+                    const totalTime = voiceTime || 1; // Prevent division by zero
+                    const percentage = ((voiceTime / topAvgVoiceTime) * 100) || 0;
                     
                     return {
                         member: data.member,
                         voiceTime,
                         afkTime,
                         mutedTime,
-                        percentage,
+                        percentage: percentage.toFixed(1),
                         displayName: data.member.displayName || data.member.user.username,
                         hasData: stats !== null,
                         isActive: voiceTime >= minimumThreshold
@@ -176,11 +177,17 @@ module.exports = new Command({
                         return `${displayName}\n❌ No activity data recorded`;
                     }
 
+                    const totalTime = voiceTime + afkTime + mutedTime || 1;
+                    const activePercent = Math.round((voiceTime / totalTime) * 100) || 0;
+                    const afkPercent = Math.round((afkTime / totalTime) * 100) || 0;
+                    const mutedPercent = Math.round((mutedTime / totalTime) * 100) || 0;
+
                     return `${displayName} ⚠️\n` +
                            `• Voice Time: \`${formatDuration(voiceTime)}\`\n` +
                            `• AFK Time: \`${formatDuration(afkTime)}\`\n` +
                            `• Muted Time: \`${formatDuration(mutedTime)}\`\n` +
-                           `• Activity: \`${percentage}%\` of top average`;
+                           `• Activity: \`${percentage}%\` of top average\n` +
+                           `• Distribution: Active \`${activePercent}%\` | AFK \`${afkPercent}%\` | Muted \`${mutedPercent}%\``;
                 }).join('\n\n');
 
                 const totalMembers = role.members.size;
