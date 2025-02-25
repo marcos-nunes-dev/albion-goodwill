@@ -30,17 +30,23 @@ module.exports = new Command({
     ],
     async execute(message, args, isSlash = false) {
         try {
+            // For slash commands, defer the reply immediately
+            if (isSlash) {
+                await message.deferReply({ ephemeral: true });
+            }
+
             // Get role based on command type
             const role = isSlash ? 
                 message.options.getRole('role') : 
                 message.mentions.roles.first();
 
             if (!role) {
-                const reply = { 
-                    content: '❌ Please specify a valid role.',
-                    flags: isSlash ? 64 : undefined
-                };
-                await message.reply(reply);
+                const errorMessage = '❌ Please specify a valid role.';
+                if (isSlash) {
+                    await message.editReply(errorMessage);
+                } else {
+                    await message.reply(errorMessage);
+                }
                 return;
             }
 
@@ -76,11 +82,12 @@ module.exports = new Command({
             // Get role members
             const members = role.members;
             if (!members.size) {
-                const reply = { 
-                    content: '❌ No members found with this role.',
-                    flags: isSlash ? 64 : undefined
-                };
-                await message.reply(reply);
+                const errorMessage = '❌ No members found with this role.';
+                if (isSlash) {
+                    await message.editReply(errorMessage);
+                } else {
+                    await message.reply(errorMessage);
+                }
                 return;
             }
 
@@ -147,19 +154,27 @@ module.exports = new Command({
                     });
             }
 
-            const reply = { embeds: [embed] };
+            // Send the response based on command type
             if (isSlash) {
-                reply.flags = 64; // Ephemeral flag
+                await message.editReply({ embeds: [embed] });
+            } else {
+                await message.reply({ embeds: [embed] });
             }
-            await message.reply(reply);
 
         } catch (error) {
             console.error('Error in presencecheck command:', error);
-            const errorReply = { 
-                content: 'An error occurred while checking role activity.',
-                flags: isSlash ? 64 : undefined
-            };
-            await message.reply(errorReply);
+            const errorMessage = 'An error occurred while checking role activity.';
+            
+            if (isSlash) {
+                try {
+                    await message.editReply(errorMessage);
+                } catch {
+                    // If editReply fails, try to send a new reply
+                    await message.reply({ content: errorMessage, ephemeral: true });
+                }
+            } else {
+                await message.reply(errorMessage);
+            }
         }
     }
 });

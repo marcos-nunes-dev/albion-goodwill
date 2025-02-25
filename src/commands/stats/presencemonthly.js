@@ -17,6 +17,11 @@ module.exports = new Command({
     ],
     async execute(message, args, isSlash = false) {
         try {
+            // For slash commands, defer the reply immediately
+            if (isSlash) {
+                await message.deferReply({ ephemeral: true });
+            }
+
             // Handle both slash commands and regular commands
             const targetUser = isSlash ? 
                 (message.options.getUser('user') || message.user) : 
@@ -43,11 +48,11 @@ module.exports = new Command({
                     .setDescription('❌ No activity recorded this month.')
                     .setFooter({ text: 'Try joining a voice channel or sending messages!' });
 
-                const reply = { embeds: [noStatsEmbed] };
                 if (isSlash) {
-                    reply.flags = 64; // Ephemeral flag
+                    await message.editReply({ embeds: [noStatsEmbed] });
+                } else {
+                    await message.reply({ embeds: [noStatsEmbed] });
                 }
-                await message.reply(reply);
                 return;
             }
 
@@ -98,19 +103,26 @@ module.exports = new Command({
                     }
                 );
 
-            const reply = { embeds: [embed] };
             if (isSlash) {
-                reply.flags = 64; // Ephemeral flag
+                await message.editReply({ embeds: [embed] });
+            } else {
+                await message.reply({ embeds: [embed] });
             }
-            await message.reply(reply);
 
         } catch (error) {
             console.error('Error in presencemonthly command:', error);
-            const errorReply = { 
-                content: 'An error occurred while fetching monthly stats.',
-                flags: isSlash ? 64 : undefined
-            };
-            await message.reply(errorReply);
+            const errorMessage = 'An error occurred while fetching monthly stats.';
+            
+            if (isSlash) {
+                try {
+                    await message.editReply(errorMessage);
+                } catch {
+                    // If editReply fails, try to send a new reply
+                    await message.reply({ content: errorMessage, ephemeral: true });
+                }
+            } else {
+                await message.reply(errorMessage);
+            }
         }
     }
 });
