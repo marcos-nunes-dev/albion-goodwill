@@ -95,24 +95,20 @@ module.exports = new Command({
                 return await message.guild.members.fetch(userId);
             });
 
-            if (validEntries.length === 0) {
+            // Filter out inactive members and sort by active time
+            const activeEntries = validEntries.filter(entry => entry.activeTime > 0)
+                .sort((a, b) => b.activeTime - a.activeTime);
+
+            if (activeEntries.length === 0) {
                 const noStatsEmbed = new EmbedBuilder()
                     .setColor(0xFF0000)
                     .setTitle('📊 Activity Leaderboard')
-                    .setDescription(`No activity recorded for this ${period} period.`)
+                    .setDescription(`No active members found for this ${period} period.`)
                     .setFooter({ text: 'Try joining a voice channel or sending messages!' });
 
                 await reply({ embeds: [noStatsEmbed] });
                 return;
             }
-
-            // Calculate activity distribution
-            const distribution = calculateActivityDistribution(validEntries);
-
-            // Create progress bar for active/inactive ratio
-            const progressBarLength = 20;
-            const activeBlocks = Math.round((distribution.activePercentage / 100) * progressBarLength);
-            const progressBar = '█'.repeat(activeBlocks) + '░'.repeat(progressBarLength - activeBlocks);
 
             // Create summary embed
             const summaryEmbed = new EmbedBuilder()
@@ -120,13 +116,8 @@ module.exports = new Command({
                 .setTitle(`📊 ${period.charAt(0).toUpperCase() + period.slice(1)} Activity Leaderboard`)
                 .addFields(
                     {
-                        name: 'Activity Distribution',
-                        value: [
-                            `${progressBar}`,
-                            `Active: ${distribution.activePercentage}% (${distribution.activeMembers} members)`,
-                            `Inactive: ${distribution.inactivePercentage}% (${distribution.inactiveMembers} members)`,
-                            `Total Members: ${distribution.totalMembers}`
-                        ].join('\n')
+                        name: 'Active Members',
+                        value: `Total Active Members: ${activeEntries.length}`
                     }
                 )
                 .setTimestamp();
@@ -134,52 +125,37 @@ module.exports = new Command({
             // Create page embed function
             const getPageEmbed = (page) => {
                 const start = page * 10;
-                const end = Math.min(start + 10, validEntries.length);
-                const pageMembers = validEntries.slice(start, end);
+                const end = Math.min(start + 10, activeEntries.length);
+                const pageMembers = activeEntries.slice(start, end);
 
                 return new EmbedBuilder()
                     .setColor(0x0099FF)
-                    .setTitle(`Activity Ranking (Page ${page + 1}/${Math.ceil(validEntries.length / 10)})`)
+                    .setTitle(`Activity Ranking (Page ${page + 1}/${Math.ceil(activeEntries.length / 10)})`)
                     .setDescription(
-                        pageMembers.map(({ member, activeTime, messageCount, activePercentage }, index) => {
+                        pageMembers.map(({ member, stats, activeTime, messageCount }, index) => {
                             const position = start + index + 1;
                             const medal = position <= 3 ? ['🥇', '🥈', '🥉'][position - 1] : `${position}.`;
-                            const status = activeTime > 0 ? '🟢' : '🔴';
+                            
+                            // Calculate total time and percentages
+                            const mutedTime = stats?.mutedDeafenedTimeSeconds || 0;
+                            const afkTime = stats?.afkTimeSeconds || 0;
+                            const totalTime = activeTime + afkTime + mutedTime;
+                            
+                            // Calculate percentages
+                            const activePercent = Math.round((activeTime / totalTime) * 100) || 0;
+                            const afkPercent = Math.round((afkTime / totalTime) * 100) || 0;
+                            const mutedPercent = Math.round((mutedTime / totalTime) * 100) || 0;
+
                             return [
-                                `${medal} ${status} ${member.toString()}`,
-                                `└ Voice: \`${formatDuration(activeTime)}\` • Messages: \`${messageCount}\` • Active: \`${activePercentage}%\``
+                                `${medal} ${member.toString()}`,
+                                `├ Voice Time: \`${formatDuration(totalTime)}\``,
+                                `├ Active: \`${formatDuration(activeTime)}\` (${activePercent}%)`,
+                                `├ AFK: \`${formatDuration(afkTime)}\` (${afkPercent}%)`,
+                                `├ Muted: \`${formatDuration(mutedTime)}\` (${mutedPercent}%)`,
+                                `└ Messages: \`${messageCount}\``
                             ].join('\n');
-                        }).join('\n')
+                        }).join('\n\n')
                     );
-            };
-
-            // Initialize pagination
-            let currentPage = 0;
-
-            // Create navigation buttons
-            const getButtons = (currentPage) => {
-                return new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('first')
-                        .setLabel('⏪ First')
-                        .setStyle(ButtonStyle.Primary)
-                        .setDisabled(currentPage === 0),
-                    new ButtonBuilder()
-                        .setCustomId('prev')
-                        .setLabel('◀️ Previous')
-                        .setStyle(ButtonStyle.Primary)
-                        .setDisabled(currentPage === 0),
-                    new ButtonBuilder()
-                        .setCustomId('next')
-                        .setLabel('Next ▶️')
-                        .setStyle(ButtonStyle.Primary)
-                        .setDisabled(currentPage === Math.ceil(validEntries.length / 10) - 1),
-                    new ButtonBuilder()
-                        .setCustomId('last')
-                        .setLabel('Last ⏩')
-                        .setStyle(ButtonStyle.Primary)
-                        .setDisabled(currentPage === Math.ceil(validEntries.length / 10) - 1)
-                );
             };
 
             // Send summary embed
@@ -222,10 +198,10 @@ module.exports = new Command({
                         currentPage = Math.max(0, currentPage - 1);
                         break;
                     case 'next':
-                        currentPage = Math.min(Math.ceil(validEntries.length / 10) - 1, currentPage + 1);
+                        currentPage = Math.min(Math.ceil(activeEntries.length / 10) - 1, currentPage + 1);
                         break;
                     case 'last':
-                        currentPage = Math.ceil(validEntries.length / 10) - 1;
+                        currentPage = Math.ceil(activeEntries.length / 10) - 1;
                         break;
                 }
 
@@ -266,3 +242,28 @@ module.exports = new Command({
         }
     }
 }); 
+
+function getButtons(currentPage) {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('first')
+            .setLabel('⏪ First')
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(currentPage === 0),
+        new ButtonBuilder()
+            .setCustomId('prev')
+            .setLabel('◀️ Previous')
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(currentPage === 0),
+        new ButtonBuilder()
+            .setCustomId('next')
+            .setLabel('Next ▶️')
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(currentPage === Math.ceil(activeEntries.length / 10) - 1),
+        new ButtonBuilder()
+            .setCustomId('last')
+            .setLabel('Last ⏩')
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(currentPage === Math.ceil(activeEntries.length / 10) - 1)
+    );
+}
