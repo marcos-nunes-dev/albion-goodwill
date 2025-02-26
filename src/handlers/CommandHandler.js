@@ -5,6 +5,7 @@ const prisma = require('../config/prisma');
 const { formatDuration, getWeekStart, getMonthStart } = require('../utils/timeUtils');
 const { fetchGuildStats, getMainRole, calculatePlayerScores } = require('../utils/albionApi');
 const axios = require('axios');
+const { EmbedBuilder, Colors } = require('discord.js');
 const { fetchActivityData } = require('../utils/activityUtils');
 
 class CommandHandler {
@@ -411,6 +412,46 @@ class CommandHandler {
 
       // Check cooldown
       if (!this.checkCooldown(interaction, command)) return;
+
+      // List of commands that don't require full configuration
+      const setupCommands = [
+        'settings',
+        'setprefix',
+        'setguildid',
+        'setguildname',
+        'setrole',
+        'setverifiedrole',
+        'competitors',
+        'help',
+        'ping',
+        'setup',
+        'refreshcommands',
+        'setupcreateroles'
+      ];
+
+      // Skip configuration check for setup commands
+      if (!setupCommands.includes(interaction.commandName)) {
+        const { validateGuildConfiguration } = require('../utils/validators');
+        const { isConfigured, missingFields } = await validateGuildConfiguration(interaction.guildId);
+
+        if (!isConfigured) {
+          const embed = new EmbedBuilder()
+            .setTitle('⚠️ Missing Configuration')
+            .setDescription('This command requires all guild settings to be configured first.')
+            .addFields({
+              name: 'Missing Settings',
+              value: missingFields.map(field => `• ${field}`).join('\n')
+            })
+            .addFields({
+              name: 'How to Fix',
+              value: 'Use `/settings` to view current settings and configure missing fields. Use `/setup` to configure all settings.'
+            })
+            .setColor(Colors.Yellow)
+            .setTimestamp();
+
+          return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+      }
 
       // Execute command with handler instance
       await command.execute(interaction, [], this);

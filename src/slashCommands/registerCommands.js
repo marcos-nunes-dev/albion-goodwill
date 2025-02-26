@@ -17,6 +17,10 @@ const commands = [
 
     // Admin Commands
     new SlashCommandBuilder()
+        .setName('setupcreateroles')
+        .setDescription('Create and configure all required roles for the bot')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder()
         .setName('presencecheck')
         .setDescription('Check presence activity of members with a specific role')
         .addRoleOption(option =>
