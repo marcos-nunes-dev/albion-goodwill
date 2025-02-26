@@ -16,7 +16,7 @@ class CommandHandler {
     this.prefix = '!albiongw';
     this.prefixCache = new Map();
     this.MAX_COMPETITORS = 5;
-    
+
     this.loadCommands();
   }
 
@@ -26,7 +26,7 @@ class CommandHandler {
 
     for (const item of items) {
       const itemPath = join(commandsPath, item);
-      
+
       // Skip if it's not a directory
       if (!statSync(itemPath).isDirectory()) {
         continue;
@@ -67,8 +67,8 @@ class CommandHandler {
     const args = message.content.slice(guildPrefix.length).trim().split(/ +/);
     const commandName = args.shift()?.toLowerCase();
 
-    const command = this.commands.get(commandName) || 
-                   this.commands.find(cmd => cmd.aliases?.includes(commandName));
+    const command = this.commands.get(commandName) ||
+      this.commands.find(cmd => cmd.aliases?.includes(commandName));
 
     if (!command) return;
 
@@ -173,9 +173,9 @@ class CommandHandler {
       today.setHours(0, 0, 0, 0);
 
       const userId = targetUser ? targetUser.id : message.author.id;
-      const displayName = targetUser ? 
-          (targetUser.displayName || targetUser.user.username) : 
-          (message.member?.displayName || message.author.username);
+      const displayName = targetUser ?
+        (targetUser.displayName || targetUser.user.username) :
+        (message.member?.displayName || message.author.username);
 
       const { data: stats } = await fetchActivityData({
         userId,
@@ -295,7 +295,7 @@ class CommandHandler {
     try {
       const now = new Date();
       const startDate = period === 'daily' ? now : period === 'weekly' ? getWeekStart(now) : getMonthStart(now);
-      
+
       const members = role.members;
       const activityData = await Promise.all(
         Array.from(members.values()).map(async (member) => {
@@ -305,7 +305,7 @@ class CommandHandler {
             period,
             startDate
           });
-          
+
           return {
             member,
             stats
@@ -367,8 +367,8 @@ class CommandHandler {
     let afkPercentage = 0;
 
     if (totalTimeSeconds > 0) {
-        activePercentage = Math.round((activeTimeSeconds / totalTimeSeconds) * 100);
-        afkPercentage = Math.round((stats.afkTimeSeconds / totalTimeSeconds) * 100);
+      activePercentage = Math.round((activeTimeSeconds / totalTimeSeconds) * 100);
+      afkPercentage = Math.round((stats.afkTimeSeconds / totalTimeSeconds) * 100);
     }
 
     // Ensure percentages are valid numbers
@@ -376,19 +376,19 @@ class CommandHandler {
     afkPercentage = isNaN(afkPercentage) ? 0 : afkPercentage;
 
     return [
-        `**${period} Activity Stats:**`,
-        ' ',
-        '**Voice Activity:**',
-        `🎤 Active Voice: ${voiceTime}`,
-        `💤 AFK: ${afkTime}`,
-        `🔇 Muted: ${mutedTime}`,
-        ' ',
-        '**Chat Activity:**',
-        `💬 Messages: ${stats.messageCount}`,
-        ' ',
-        '**Active Time Distribution:**',
-        `🟩 Active: ${activePercentage}%`,
-        `⬜ AFK: ${afkPercentage}%`
+      `**${period} Activity Stats:**`,
+      ' ',
+      '**Voice Activity:**',
+      `🎤 Active Voice: ${voiceTime}`,
+      `💤 AFK: ${afkTime}`,
+      `🔇 Muted: ${mutedTime}`,
+      ' ',
+      '**Chat Activity:**',
+      `💬 Messages: ${stats.messageCount}`,
+      ' ',
+      '**Active Time Distribution:**',
+      `🟩 Active: ${activePercentage}%`,
+      `⬜ AFK: ${afkPercentage}%`
     ].filter(Boolean).join('\n');
   }
 
@@ -444,7 +444,7 @@ class CommandHandler {
             })
             .addFields({
               name: 'How to Fix',
-              value: 'Use `/settings` to view current settings and configure missing fields. Use `/setup` to configure all settings.'
+              value: 'Use `/settings` to view current settings and configure missing fields. You can use `/setup` to configure all settings manually or /setupcreateroles to create all roles automatically.'
             })
             .setColor(Colors.Yellow)
             .setTimestamp();
@@ -458,7 +458,7 @@ class CommandHandler {
     } catch (error) {
       console.error('Interaction error:', error);
       const reply = { content: 'There was an error executing this command!', ephemeral: true };
-      
+
       if (interaction.deferred) {
         await interaction.editReply(reply);
       } else {
@@ -526,10 +526,10 @@ class CommandHandler {
 
     try {
       await prisma.guildSettings.upsert({
-        where: { 
-          guildId: source.guildId 
+        where: {
+          guildId: source.guildId
         },
-        update: { 
+        update: {
           commandPrefix: newPrefix,
           guildName: source.guild.name
         },
