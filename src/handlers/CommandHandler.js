@@ -6,6 +6,7 @@ const { formatDuration, getWeekStart, getMonthStart } = require('../utils/timeUt
 const { fetchGuildStats, getMainRole, calculatePlayerScores } = require('../utils/albionApi');
 const axios = require('axios');
 const { EmbedBuilder, Colors } = require('discord.js');
+const { fetchActivityData } = require('../utils/activityUtils');
 
 class CommandHandler {
   constructor(client) {
@@ -138,9 +139,6 @@ class CommandHandler {
       `\`${guildPrefix} presencedaily [@user]\` - Mostrar presença diária (sua ou do usuário mencionado)`,
       `\`${guildPrefix} presenceweekly [@user]\` - Mostrar presença semanal`,
       `\`${guildPrefix} presencemonthly [@user]\` - Mostrar presença mensal`,
-      `\`${guildPrefix} presenceleaderboard [daily|weekly|monthly]\` - Mostrar top 10 usuários ativos`,
-      `\`${guildPrefix} presencecheck @role [daily|weekly]\` - Verificar presença dos membros de um cargo`,
-      `\`${guildPrefix} register <region> <nickname>\` - Registrar seu personagem do Albion`,
       '',
       '**Comandos de Administrador:**',
       `\`${guildPrefix} setguildid <id>\` - Definir ID da guild do Albion`,
@@ -175,16 +173,15 @@ class CommandHandler {
       today.setHours(0, 0, 0, 0);
 
       const userId = targetUser ? targetUser.id : message.author.id;
-      const displayName = targetUser ? targetUser.displayName : message.author.username;
+      const displayName = targetUser ? 
+          (targetUser.displayName || targetUser.user.username) : 
+          (message.member?.displayName || message.author.username);
 
-      const stats = await prisma.dailyActivity.findUnique({
-        where: {
-          userId_guildId_date: {
-            userId: userId,
-            guildId: message.guild.id,
-            date: today
-          }
-        }
+      const { data: stats } = await fetchActivityData({
+        userId,
+        guildId: message.guild.id,
+        period: 'daily',
+        startDate: today
       });
 
       if (!stats) {
@@ -203,25 +200,19 @@ class CommandHandler {
   async getWeeklyStats(message, targetUser) {
     try {
       const weekStart = getWeekStart(new Date());
-      const userId = targetUser ? targetUser.id : message.author.id;
-      const displayName = targetUser ? targetUser.displayName : message.author.username;
-
-      const stats = await prisma.weeklyActivity.findUnique({
-        where: {
-          userId_guildId_weekStart: {
-            userId: userId,
-            guildId: message.guild.id,
-            weekStart
-          }
-        }
+      const { data: stats } = await fetchActivityData({
+        userId: targetUser.id,
+        guildId: message.guild.id,
+        period: 'weekly',
+        startDate: weekStart
       });
 
       if (!stats) {
-        await message.reply(`No activity recorded this week for ${targetUser ? displayName : 'you'}.`);
+        await message.reply(`No activity recorded this week for ${targetUser ? targetUser.displayName || targetUser.user.username : 'you'}.`);
         return;
       }
 
-      const response = this.formatStats(`${targetUser ? `${displayName}'s` : 'Your'} Weekly`, stats);
+      const response = this.formatStats(`${targetUser ? `${targetUser.displayName || targetUser.user.username}'s` : 'Your'} Weekly`, stats);
       await message.reply(response);
     } catch (error) {
       console.error('Error fetching weekly stats:', error);
@@ -232,25 +223,19 @@ class CommandHandler {
   async getMonthlyStats(message, targetUser) {
     try {
       const monthStart = getMonthStart(new Date());
-      const userId = targetUser ? targetUser.id : message.author.id;
-      const displayName = targetUser ? targetUser.displayName : message.author.username;
-
-      const stats = await prisma.monthlyActivity.findUnique({
-        where: {
-          userId_guildId_monthStart: {
-            userId: userId,
-            guildId: message.guild.id,
-            monthStart
-          }
-        }
+      const { data: stats } = await fetchActivityData({
+        userId: targetUser.id,
+        guildId: message.guild.id,
+        period: 'monthly',
+        startDate: monthStart
       });
 
       if (!stats) {
-        await message.reply(`No activity recorded this month for ${targetUser ? displayName : 'you'}.`);
+        await message.reply(`No activity recorded this month for ${targetUser ? targetUser.displayName || targetUser.user.username : 'you'}.`);
         return;
       }
 
-      const response = this.formatStats(`${targetUser ? `${displayName}'s` : 'Your'} Monthly`, stats);
+      const response = this.formatStats(`${targetUser ? `${targetUser.displayName || targetUser.user.username}'s` : 'Your'} Monthly`, stats);
       await message.reply(response);
     } catch (error) {
       console.error('Error fetching monthly stats:', error);
@@ -263,19 +248,13 @@ class CommandHandler {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const topUsers = await prisma.dailyActivity.findMany({
-        where: {
-          date: today,
-          guildId: message.guild.id
-        },
-        orderBy: [
-          { voiceTimeSeconds: 'desc' },
-          { messageCount: 'desc' }
-        ],
-        take: 10
+      const { data: topUsers } = await fetchActivityData({
+        guildId: message.guild.id,
+        period: 'daily',
+        startDate: today
       });
 
-      if (topUsers.length === 0) {
+      if (!topUsers || !topUsers.length) {
         await message.reply('No activity recorded today.');
         return;
       }
@@ -284,7 +263,7 @@ class CommandHandler {
 
       const leaderboardLines = topUsers.map((user, index) => {
         const member = members.get(user.userId);
-        const displayName = member ? member.displayName : user.username;
+        const displayName = member ? (member.displayName || member.user.username) : user.userId;
 
         return [
           `${index + 1}. **${displayName}**`,
@@ -314,43 +293,40 @@ class CommandHandler {
     const reply = (content) => isInteraction ? source.reply(content) : source.reply(content);
 
     try {
-      const isDaily = period === 'daily';
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      // Get role members
+      const now = new Date();
+      const startDate = period === 'daily' ? now : period === 'weekly' ? getWeekStart(now) : getMonthStart(now);
+      
       const members = role.members;
+      const activityData = await Promise.all(
+        Array.from(members.values()).map(async (member) => {
+          const { data: stats } = await fetchActivityData({
+            userId: member.id,
+            guildId: source.guild.id,
+            period,
+            startDate
+          });
+          
+          return {
+            member,
+            stats
+          };
+        })
+      );
 
-      // Get activity data
-      const activityData = await prisma[isDaily ? 'dailyActivity' : 'weeklyActivity'].findMany({
-        where: {
-          guildId,
-          date: isDaily ? today : getWeekStart(today)
-        }
-      });
-
-      // Calculate threshold from top performers
-      const topPerformers = activityData
-        .sort((a, b) => b.voiceTimeSeconds - a.voiceTimeSeconds)
-        .slice(0, 10);
-
-      const topAvgVoiceTime = topPerformers.reduce((sum, user) =>
-        sum + user.voiceTimeSeconds, 0) / topPerformers.length;
-
-      const minimumThreshold = topAvgVoiceTime * 0.05; // 5% threshold
-
-      // Find inactive members
-      const veryInactiveMembers = [];
-
-      for (const [memberId, member] of members) {
-        const activity = activityData.find(a => a.userId === memberId);
-        const voiceTime = activity?.voiceTimeSeconds || 0;
+      const veryInactiveMembers = activityData.filter(data => data.stats !== null).map(data => {
+        const { member, stats } = data;
+        const voiceTime = stats.voiceTimeSeconds;
+        const topAvgVoiceTime = activityData.reduce((sum, data) => sum + data.stats.voiceTimeSeconds, 0) / activityData.length;
+        const minimumThreshold = topAvgVoiceTime * 0.05; // 5% threshold
         const percentage = ((voiceTime / topAvgVoiceTime) * 100).toFixed(1);
 
-        if (voiceTime < minimumThreshold) {
-          veryInactiveMembers.push({ member, voiceTime, percentage });
-        }
-      }
+        return {
+          member,
+          voiceTime,
+          percentage,
+          displayName: member.displayName || member.user.username
+        };
+      }).filter(data => data.voiceTime < minimumThreshold);
 
       // Sort by voice time
       veryInactiveMembers.sort((a, b) => b.voiceTime - a.voiceTime);
@@ -363,8 +339,8 @@ class CommandHandler {
         `Mínimo Requerido (5%): ${formatDuration(minimumThreshold)}`,
         '',
         '**Membros Abaixo do Limite:**',
-        ...veryInactiveMembers.map(({ member, voiceTime, percentage }) =>
-          `${member.displayName}: ${formatDuration(voiceTime)} (${percentage}%)`
+        ...veryInactiveMembers.map(({ displayName, voiceTime, percentage }) =>
+          `${displayName}: ${formatDuration(voiceTime)} (${percentage}%)`
         ),
         '',
         `Total: ${veryInactiveMembers.length} membros abaixo do limite de 5%`
@@ -1299,7 +1275,7 @@ class CommandHandler {
         // Check if member has verified role
         if (!member.roles.cache.has(settings.nicknameVerifiedId)) {
           notVerified++;
-          notVerifiedMembers.push(member.displayName);
+          notVerifiedMembers.push(member.displayName || member.user.username);
           continue;
         }
 
@@ -1312,7 +1288,7 @@ class CommandHandler {
 
         if (!registration) {
           notVerified++;
-          notVerifiedMembers.push(member.displayName);
+          notVerifiedMembers.push(member.displayName || member.user.username);
           continue;
         }
 
@@ -1690,12 +1666,12 @@ class CommandHandler {
       }
 
       // Create mention list and message
-      const mentions = unregisteredMembers.map(member => member.toString()).join(' ');
+      const memberList = unregisteredMembers.map(member => member.displayName || member.user.username).join('\n');
       const response = [
         `⚠️ **Membros não registrados no cargo ${role.name}:**`,
-        mentions,
+        memberList,
         '',
-        '📝 Use o comando `/register` para registrar seu personagem do Albion Online.',
+        '📝 Use o comando `/register` para registrar seu personagem do Albion.',
         'Exemplo: `/register region:america nickname:SeuNick`'
       ].join('\n');
 

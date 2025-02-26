@@ -40,7 +40,7 @@ const commands = [
         ),
     new SlashCommandBuilder()
         .setName('competitors')
-        .setDescription('Manage competitors in the tournament')
+        .setDescription('Manage competitors to compare your guild against it')
         .addStringOption(option =>
             option.setName('action')
                 .setDescription('Action to perform (add/remove/list)')
@@ -222,19 +222,16 @@ const commands = [
 
     // Stats Commands
     new SlashCommandBuilder()
-        .setName('presenceleaderboard')
-        .setDescription('Display presence leaderboard'),
-    new SlashCommandBuilder()
-        .setName('presenceweekly')
-        .setDescription('Display weekly presence stats')
+        .setName('presencemonthly')
+        .setDescription('Display monthly presence stats')
         .addUserOption(option =>
             option.setName('user')
-                .setDescription('The user to check stats for (defaults to you)')
+                .setDescription('User to check (default: yourself)')
                 .setRequired(false)
         ),
     new SlashCommandBuilder()
-        .setName('presencemonthly')
-        .setDescription('Display monthly presence stats')
+        .setName('presenceweekly')
+        .setDescription('Display weekly presence stats')
         .addUserOption(option =>
             option.setName('user')
                 .setDescription('The user to check stats for (defaults to you)')
@@ -305,6 +302,10 @@ const commands = [
 
 async function registerSlashCommands(client) {
     try {
+        if (!client || !client.user) {
+            throw new Error('Client not properly initialized');
+        }
+
         console.log('Started refreshing application (/) commands.');
 
         const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);

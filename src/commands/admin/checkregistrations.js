@@ -83,12 +83,12 @@ module.exports = new Command({
             let currentChunk = '';
 
             for (const member of unregisteredMembers) {
-                const memberMention = member.toString();
-                if (currentChunk.length + memberMention.length + 1 > CHUNK_SIZE) {
+                const memberDisplay = member.displayName || member.user.username;
+                if (currentChunk.length + memberDisplay.length + 1 > CHUNK_SIZE) {
                     memberChunks.push(currentChunk);
-                    currentChunk = memberMention;
+                    currentChunk = memberDisplay;
                 } else {
-                    currentChunk += (currentChunk ? '\n' : '') + memberMention;
+                    currentChunk += (currentChunk ? '\n' : '') + memberDisplay;
                 }
             }
             if (currentChunk) {

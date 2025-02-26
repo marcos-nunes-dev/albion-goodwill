@@ -1,121 +1,128 @@
 const { EmbedBuilder } = require('discord.js');
 const Command = require('../../structures/Command');
-const prisma = require('../../config/prisma');
 const { formatDuration, getWeekStart } = require('../../utils/timeUtils');
+const { calculateActivityStats, fetchActivityData } = require('../../utils/activityUtils');
+
+const ACTIVITY_THRESHOLD_PERCENTAGE = 5; // 5% of top 10 average
+const ITEMS_PER_PAGE = 10;
 
 module.exports = new Command({
     name: 'presenceweekly',
-    description: 'Shows weekly presence stats for a user',
-    category: 'stats',
-    usage: '[@user]',
-    cooldown: 5,
-    async execute(message, args, handler) {
+    description: 'Check weekly activity stats for a user',
+    defaultMemberPermissions: null,
+    options: [
+        {
+            name: 'user',
+            description: 'User to check stats for (defaults to you)',
+            type: 6,
+            required: false
+        }
+    ],
+    async execute(message, args, isSlash = false) {
         try {
-            const isSlash = message.commandName === 'presenceweekly';
-            
-            // Get target user based on command type
-            let targetUser;
+            // For slash commands, defer the reply immediately
             if (isSlash) {
-                targetUser = message.options.getUser('user') || message.user;
-            } else {
-                targetUser = message.mentions.users.first() || message.author;
+                await message.deferReply({ ephemeral: true });
             }
 
-            const weekStart = getWeekStart(new Date());
-            const member = await message.guild.members.fetch(targetUser.id);
+            // Handle both slash commands and regular commands
+            const targetUser = isSlash ? 
+                (message.options.getUser('user') || message.user) : 
+                (args?.user || message.author);
 
-            const stats = await prisma.weeklyActivity.findUnique({
-                where: {
-                    userId_guildId_weekStart: {
-                        userId: targetUser.id,
-                        guildId: message.guild.id,
-                        weekStart
-                    }
-                }
+            const member = await message.guild.members.fetch(targetUser.id);
+            const weekStart = getWeekStart(new Date());
+
+            // Fetch activity data
+            const { data: stats } = await fetchActivityData({
+                userId: targetUser.id,
+                guildId: message.guild.id,
+                period: 'weekly',
+                startDate: weekStart
             });
 
-            if (!stats) {
-                const noStatsEmbed = new EmbedBuilder()
-                    .setColor(0xFF0000)
-                    .setAuthor({
-                        name: member.displayName,
-                        iconURL: targetUser.displayAvatarURL({ dynamic: true })
-                    })
-                    .setDescription('❌ No activity recorded this week. Or we just have partial data.')
-                    .setFooter({ text: 'Try joining a voice channel or sending messages!' });
+            // Calculate activity stats
+            const activityStats = calculateActivityStats(stats || null);
 
-                await message.reply({ 
-                    embeds: [noStatsEmbed],
-                    ephemeral: isSlash
-                });
-                return;
-            }
-
-            // Calculate percentages
-            const totalTime = stats.voiceTimeSeconds;
-            const activeTime = stats.voiceTimeSeconds - stats.afkTimeSeconds;
-            const activePercentage = totalTime > 0 ? Math.round((activeTime / totalTime) * 100) : 0;
-            const afkPercentage = totalTime > 0 ? Math.round((stats.afkTimeSeconds / totalTime) * 100) : 0;
-
-            // Create progress bar for active/AFK ratio
-            const progressBarLength = 20;
-            const activeBlocks = Math.round((activePercentage / 100) * progressBarLength);
-            const progressBar = '█'.repeat(activeBlocks) + '░'.repeat(progressBarLength - activeBlocks);
-
+            // Create embed
             const embed = new EmbedBuilder()
-                .setColor(0x0099FF)
+                .setColor(activityStats.isActive ? 0x00FF00 : 0xFF4444)
                 .setAuthor({
                     name: `${member.displayName}'s Weekly Activity`,
                     iconURL: targetUser.displayAvatarURL({ dynamic: true })
                 })
-                .setDescription(`Activity stats for week starting <t:${Math.floor(weekStart.getTime() / 1000)}:D>`)
-                .addFields(
-                    {
-                        name: '🎤 Voice Activity',
-                        value: [
-                            `Total Time: \`${formatDuration(stats.voiceTimeSeconds)}\``,
-                            `Active Time: \`${formatDuration(activeTime)}\``,
-                            `AFK Time: \`${formatDuration(stats.afkTimeSeconds)}\``,
-                            `Muted Time: \`${formatDuration(stats.mutedTimeSeconds || 0)}\``,
-                        ].join('\n'),
-                        inline: true
-                    },
-                    {
-                        name: '💬 Chat Activity',
-                        value: `Messages Sent: \`${stats.messageCount}\``,
-                        inline: true
-                    },
-                    {
-                        name: '\u200B',
-                        value: '\u200B',
-                        inline: false
-                    },
-                    {
-                        name: '📊 Activity Distribution',
-                        value: [
-                            `${progressBar}`,
-                            `Active: ${activePercentage}% | AFK: ${afkPercentage}%`
-                        ].join('\n')
-                    }
-                )
-                .setTimestamp()
-                .setFooter({ text: 'Last updated' });
+                .setTimestamp(weekStart)
+                .setFooter({ text: 'Stats since' });
 
-            await message.reply({ 
-                embeds: [embed],
-                ephemeral: isSlash
-            });
+            if (!stats) {
+                embed.setDescription('❌ No activity recorded this week.\nTry joining a voice channel or sending messages!');
+            } else {
+                // Create progress bar for active/AFK/muted distribution
+                const progressBarLength = 20;
+                const mutedTime = stats?.mutedDeafenedTimeSeconds || 0;
+                const activeTime = activityStats.activeTime || 0;
+                const afkTime = activityStats.afkTime || 0;
+                
+                // Calculate total time including all components
+                const totalTime = activeTime + afkTime + mutedTime || 1; // Prevent division by zero
+                
+                // Calculate percentages based on the true total time
+                const activePercent = Math.round((activeTime / totalTime) * 100) || 0;
+                const afkPercent = Math.round((afkTime / totalTime) * 100) || 0;
+                const mutedPercent = Math.round((mutedTime / totalTime) * 100) || 0;
+
+                // Ensure percentages add up to 100%
+                const totalPercent = activePercent + afkPercent + mutedPercent;
+                const activeBlocks = Math.round((activePercent / 100) * progressBarLength) || 0;
+                const afkBlocks = Math.round((afkPercent / 100) * progressBarLength) || 0;
+                const mutedBlocks = progressBarLength - activeBlocks - afkBlocks;
+
+                const progressBar = '🟩'.repeat(activeBlocks) + '🟨'.repeat(afkBlocks) + '🟥'.repeat(mutedBlocks);
+
+                const description = [
+                    `${activityStats.isActive ? '✅ Active' : '⚠️ Inactive'}`,
+                    '',
+                    '🎙️ **Voice Activity**',
+                    `• Total Time: \`${formatDuration(totalTime)}\``,
+                    `• Active Time: \`${formatDuration(activeTime)}\``,
+                    `• AFK Time: \`${formatDuration(afkTime)}\``,
+                    `• Muted Time: \`${formatDuration(mutedTime)}\``,
+                    `• Activity: \`${activityStats.activePercentage || 0}%\` of requirement`,
+                    '',
+                    '📊 **Time Distribution**',
+                    progressBar,
+                    `• Active: \`${activePercent}%\``,
+                    `• AFK: \`${afkPercent}%\``,
+                    `• Muted: \`${mutedPercent}%\``,
+                    '',
+                    '💬 **Messages**',
+                    `• Total: \`${activityStats.messageCount || 0}\``
+                ].join('\n');
+
+                embed.setDescription(description);
+            }
+
+            // Send the response
+            if (isSlash) {
+                await message.editReply({ embeds: [embed] });
+            } else {
+                await message.reply({ embeds: [embed] });
+            }
+
         } catch (error) {
-            console.error('Error fetching weekly stats:', error);
-            const errorEmbed = new EmbedBuilder()
-                .setColor(0xFF0000)
-                .setTitle('❌ Error')
-                .setDescription('Failed to fetch weekly stats. Please try again later.');
-
-            await message.reply({ 
-                embeds: [errorEmbed],
-                ephemeral: isSlash
-            });
+            console.error('Error in presenceweekly command:', error);
+            const errorMessage = 'An error occurred while fetching weekly stats.';
+            
+            if (isSlash) {
+                try {
+                    await message.editReply(errorMessage);
+                } catch {
+                    // If editReply fails, try to send a new reply
+                    await message.reply({ content: errorMessage, ephemeral: true });
+                }
+            } else {
+                await message.reply(errorMessage);
+            }
         }
     }
-}); 
+});
