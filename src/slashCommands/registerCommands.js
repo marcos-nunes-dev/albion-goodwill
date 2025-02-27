@@ -154,6 +154,31 @@ const commands = [
                 .setDescription('Enable or disable nickname sync')
                 .setRequired(true)
         ),
+    new SlashCommandBuilder()
+        .setName('registerhim')
+        .setDescription('Register an Albion Online character for another user (Admin only)')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('The Discord user to register')
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option.setName('region')
+                .setDescription('Player region')
+                .setRequired(true)
+                .addChoices(
+                    { name: 'America', value: 'america' },
+                    { name: 'Europe', value: 'europe' },
+                    { name: 'Asia', value: 'asia' }
+                )
+        )
+        .addStringOption(option =>
+            option.setName('character')
+                .setDescription('Albion Online character name')
+                .setRequired(true)
+                .setAutocomplete(true)
+        ),
 
     // Albion Commands
     new SlashCommandBuilder()

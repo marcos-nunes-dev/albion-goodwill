@@ -196,11 +196,28 @@ module.exports = new Command({
                 }
             });
 
-            // Add verified role
+            // Add verified role and update nickname if sync is enabled
             try {
+                // Get guild settings to check for sync setting
+                const guildSettings = await prisma.guildSettings.findUnique({
+                    where: { guildId: interaction.guild.id }
+                });
+
                 const verifiedRole = await interaction.guild.roles.fetch(settings.nicknameVerifiedId);
                 if (verifiedRole) {
                     await interaction.member.roles.add(verifiedRole);
+                }
+
+                // Set nickname if sync is enabled
+                let nicknameStatus = '🎭 Verified role assigned';
+                if (guildSettings?.syncAlbionNickname) {
+                    try {
+                        await interaction.member.setNickname(playerName);
+                        nicknameStatus += '\n🔄 Nickname synchronized';
+                    } catch (nickError) {
+                        console.error('Error setting nickname:', nickError);
+                        nicknameStatus += '\n⚠️ Failed to synchronize nickname';
+                    }
                 }
 
                 const response = {
@@ -221,7 +238,7 @@ module.exports = new Command({
                                 },
                                 {
                                     name: 'Status',
-                                    value: '🎭 Verified role assigned',
+                                    value: nicknameStatus,
                                     inline: true
                                 }
                             ],
