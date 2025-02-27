@@ -37,6 +37,11 @@ const commands = [
                     { name: 'Weekly', value: 'weekly' },
                     { name: 'Monthly', value: 'monthly' }
                 )
+        )
+        .addRoleOption(option =>
+            option.setName('exclude')
+                .setDescription('Role to exclude from the check (e.g., whitelist role)')
+                .setRequired(false)
         ),
     new SlashCommandBuilder()
         .setName('competitors')
