@@ -1704,6 +1704,76 @@ class CommandHandler {
       }
     }
   }
+
+  async handleBattleregister(interaction) {
+    try {
+      const enemyGuildsStr = interaction.options.getString('enemies');
+      const timeStr = interaction.options.getString('time');
+      const isVictory = interaction.options.getBoolean('victory');
+      const kills = interaction.options.getInteger('kills');
+      const deaths = interaction.options.getInteger('deaths');
+      
+      let battleTime;
+      if (timeStr) {
+        // Parse the provided time string
+        battleTime = new Date(timeStr + 'Z'); // Append Z to ensure UTC
+        if (isNaN(battleTime.getTime())) {
+          return await interaction.reply({
+            content: 'Invalid time format. Please use YYYY-MM-DD HH:mm format (UTC time)',
+            ephemeral: true
+          });
+        }
+      } else {
+        // Use current UTC time
+        battleTime = new Date();
+      }
+
+      // Split and trim enemy guild names
+      const enemyGuilds = enemyGuildsStr.split(',').map(guild => guild.trim()).filter(guild => guild.length > 0);
+
+      if (enemyGuilds.length === 0) {
+        return await interaction.reply({
+          content: 'Please provide at least one enemy guild name.',
+          ephemeral: true
+        });
+      }
+
+      // Create the battle registration
+      await prisma.battleRegistration.create({
+        data: {
+          userId: interaction.user.id,
+          guildId: interaction.guildId,
+          battleTime,
+          enemyGuilds,
+          isVictory,
+          kills,
+          deaths
+        }
+      });
+
+      const formattedTime = battleTime.toISOString().replace('T', ' ').slice(0, -5) + ' UTC';
+      const result = isVictory ? '🏆 Victory' : '💀 Defeat';
+      const kd = `K/D: ${kills}/${deaths} (${(kills/deaths).toFixed(2)})`;
+      
+      await interaction.reply({
+        content: [
+          `Battle registered successfully!`,
+          `Time: ${formattedTime}`,
+          `Result: ${result}`,
+          `Enemy Guilds: ${enemyGuilds.join(', ')}`,
+          kd
+        ].join('\n'),
+        ephemeral: false
+      });
+
+    } catch (error) {
+      console.error('Error in battleregister command:', error);
+      await interaction.reply({
+        content: 'An error occurred while registering the battle. Please try again.',
+        ephemeral: true
+      });
+    }
+  }
 }
 
 module.exports = CommandHandler;

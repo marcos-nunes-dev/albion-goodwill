@@ -51,15 +51,15 @@ const commands = [
                 .setDescription('Action to perform (add/remove/list)')
                 .setRequired(true)
                 .addChoices(
-                    { name: 'add', value: 'add' },
-                    { name: 'remove', value: 'remove' },
-                    { name: 'list', value: 'list' }
+                    { name: 'List competitors', value: 'list' },
+                    { name: 'Add competitor', value: 'add' },
+                    { name: 'Remove competitor', value: 'remove' }
                 )
         )
         .addStringOption(option =>
             option.setName('guild_id')
-                .setDescription('Competitor guild id')
-                .setRequired(false)
+                .setDescription('Competitor guild id (required for add/remove)')
+                .setRequired(true)
         ),
     new SlashCommandBuilder()
         .setName('checkregistrations')
@@ -350,6 +350,36 @@ const commands = [
             option.setName('members_file')
                 .setDescription('Text file containing member list')
                 .setRequired(true)
+        ),
+    new SlashCommandBuilder()
+        .setName('battleregister')
+        .setDescription('Register a battle against enemy guilds')
+        .addStringOption(option =>
+            option.setName('time')
+                .setDescription('Battle time in UTC (format: YYYY-MM-DD HH:mm). Default: current UTC time')
+                .setRequired(false)
+        )
+        .addStringOption(option =>
+            option.setName('enemies')
+                .setDescription('Enemy guild names (comma-separated)')
+                .setRequired(true)
+        )
+        .addBooleanOption(option =>
+            option.setName('victory')
+                .setDescription('Was the battle a victory?')
+                .setRequired(true)
+        )
+        .addIntegerOption(option =>
+            option.setName('kills')
+                .setDescription('Total number of kills in the battle')
+                .setRequired(true)
+                .setMinValue(0)
+        )
+        .addIntegerOption(option =>
+            option.setName('deaths')
+                .setDescription('Total number of deaths in the battle')
+                .setRequired(true)
+                .setMinValue(0)
         ),
 ];
 

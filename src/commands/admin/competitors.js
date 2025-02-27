@@ -31,36 +31,10 @@ const command = new Command({
 
         switch (action.toLowerCase()) {
             case 'add':
-                if (!guildId) {
-                    const embed = new EmbedBuilder()
-                        .setTitle('Missing Information')
-                        .setDescription('Please provide the competitor guild ID.')
-                        .addFields(
-                            { name: 'Usage', value: '```/competitors add <guild_id>```', inline: true },
-                            { name: 'Example', value: '```/competitors add 1234567890```', inline: true }
-                        )
-                        .setColor(Colors.Yellow)
-                        .setTimestamp();
-                    await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
-                    return;
-                }
                 await handleAddCompetitor(source, guildId);
                 break;
 
             case 'remove':
-                if (!guildId) {
-                    const embed = new EmbedBuilder()
-                        .setTitle('Missing Information')
-                        .setDescription('Please provide the competitor guild ID to remove.')
-                        .addFields(
-                            { name: 'Usage', value: '```/competitors remove <guild_id>```', inline: true },
-                            { name: 'Example', value: '```/competitors remove 1234567890```', inline: true }
-                        )
-                        .setColor(Colors.Yellow)
-                        .setTimestamp();
-                    await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
-                    return;
-                }
                 await handleRemoveCompetitor(source, guildId);
                 break;
 

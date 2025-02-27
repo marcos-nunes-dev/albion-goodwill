@@ -80,3 +80,20 @@ model PlayerRegistration {
   @@index([userId])
   @@map("player_registrations")
 }
+
+model BattleRegistration {
+  id            String   @id @default(uuid())
+  userId        String   // Discord user ID who registered the battle
+  guildId       String   // Discord guild ID where the battle was registered
+  battleTime    DateTime @db.Timestamptz // UTC time of the battle
+  enemyGuilds   String[] // Array of enemy guild names
+  isVictory     Boolean  // Whether the battle was a victory or defeat
+  kills         Int      // Amount of kills in the battle
+  deaths        Int      // Amount of deaths in the battle
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([guildId])
+  @@index([userId])
+  @@map("battle_registrations")
+}
