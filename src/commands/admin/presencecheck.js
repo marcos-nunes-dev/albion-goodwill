@@ -177,17 +177,22 @@ module.exports = new Command({
                 const end = Math.min(start + ITEMS_PER_PAGE, memberStats.length);
                 const pageMembers = memberStats.slice(start, end);
 
-                const description = pageMembers.map(({ displayName, voiceTime, afkTime, mutedTime, percentage, hasData, isActive }) => {
+                const description = pageMembers.map(({ displayName, voiceTime, afkTime, mutedTime, percentage, hasData, isActive, member }) => {
                     if (!hasData) {
-                        return `${displayName}\n❌ No activity data recorded`;
+                        const joinedAt = member.joinedAt;
+                        const joinDuration = formatDuration((Date.now() - joinedAt.getTime()) / 1000);
+                        return `${displayName}\n📅 Joined: ${joinedAt.toLocaleDateString()} (${joinDuration} ago)\n❌ No activity data recorded`;
                     }
 
                     const totalTime = voiceTime + afkTime + mutedTime || 1;
                     const activePercent = Math.round((voiceTime / totalTime) * 100) || 0;
                     const afkPercent = Math.round((afkTime / totalTime) * 100) || 0;
                     const mutedPercent = Math.round((mutedTime / totalTime) * 100) || 0;
+                    const joinedAt = member.joinedAt;
+                    const joinDuration = formatDuration((Date.now() - joinedAt.getTime()) / 1000);
 
                     return `${displayName} ${isActive ? '✅' : '⚠️'}\n` +
+                           `📅 Joined: ${joinedAt.toLocaleDateString()} (${joinDuration} ago)\n` +
                            `• Voice Time: \`${formatDuration(voiceTime)}\`\n` +
                            `• AFK Time: \`${formatDuration(afkTime)}\`\n` +
                            `• Muted Time: \`${formatDuration(mutedTime)}\`\n` +
