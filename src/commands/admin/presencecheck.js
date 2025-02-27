@@ -27,6 +27,12 @@ module.exports = new Command({
                 { name: 'Weekly', value: 'weekly' },
                 { name: 'Monthly', value: 'monthly' }
             ]
+        },
+        {
+            name: 'exclude',
+            description: 'Role to exclude from the check (e.g., whitelist role)',
+            type: 8,
+            required: false
         }
     ],
     async execute(message, args, isSlash = false) {
@@ -50,6 +56,11 @@ module.exports = new Command({
                 }
                 return;
             }
+
+            // Get exclude role based on command type
+            const excludeRole = isSlash ? 
+                message.options.getRole('exclude') : 
+                message.mentions.roles.last();
 
             // Get period based on command type (default to monthly)
             const period = isSlash ? 
@@ -78,10 +89,14 @@ module.exports = new Command({
                     break;
             }
 
-            // Get role members
-            const members = role.members;
+            // Get role members (excluding members with the exclude role)
+            const members = role.members.filter(member => 
+                !excludeRole || !member.roles.cache.has(excludeRole.id)
+            );
+
             if (!members.size) {
-                const errorMessage = '❌ No members found with this role.';
+                const errorMessage = '❌ No members found with this role' + 
+                    (excludeRole ? ' (after excluding members with the specified role).' : '.');
                 if (isSlash) {
                     await message.editReply(errorMessage);
                 } else {
@@ -205,16 +220,17 @@ module.exports = new Command({
                 const noDataCount = memberStats.filter(m => !m.hasData).length;
                 const inactiveCount = inactiveMemberStats.filter(m => m.hasData).length;
 
+                const footerText = `Required Active Time: ${formatDuration(minimumThreshold)} • ` +
+                    `Total Members: ${totalMembers} • Active: ${activeCount} • ` +
+                    `Inactive: ${inactiveCount} • No Data: ${noDataCount}` +
+                    (excludeRole ? ` • Excluded Role: ${excludeRole.name}` : '') +
+                    ` • Page ${page + 1}/${totalPages}`;
+
                 return new EmbedBuilder()
                     .setTitle(`${title} - ${role.name}`)
                     .setColor(0xFF4444)
                     .setDescription(description)
-                    .setFooter({ 
-                        text: `Required Active Time: ${formatDuration(minimumThreshold)} • ` +
-                             `Total Members: ${totalMembers} • Active: ${activeCount} • ` +
-                             `Inactive: ${inactiveCount} • No Data: ${noDataCount} • ` +
-                             `Page ${page + 1}/${totalPages}` 
-                    })
+                    .setFooter({ text: footerText })
                     .setTimestamp();
             };
 
