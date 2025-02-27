@@ -97,6 +97,18 @@ client.on('messageCreate', async (message) => {
   }
 });
 
+client.on('interactionCreate', async (interaction) => {
+  try {
+    if (interaction.isAutocomplete()) {
+      await autocompleteHandler.handleAutocomplete(interaction);
+    } else {
+      await commandHandler.handleInteraction(interaction);
+    }
+  } catch (error) {
+    console.error('Interaction handling error:', error);
+  }
+});
+
 client.on('voiceStateUpdate', async (oldState, newState) => {
   try {
     await voiceTracker.handleVoiceStateUpdate(oldState, newState);
@@ -191,18 +203,6 @@ client.on('guildCreate', async (guild) => {
   }
 });
 
-client.on('interactionCreate', async (interaction) => {
-  try {
-    if (interaction.isAutocomplete()) {
-      await autocompleteHandler.handleAutocomplete(interaction);
-    } else {
-      await commandHandler.handleInteraction(interaction);
-    }
-  } catch (error) {
-    console.error('Interaction error:', error.message);
-  }
-});
-
 client.login(process.env.DISCORD_TOKEN)
   .then(() => console.log('Login successful!'))
   .catch(error => {
@@ -264,4 +264,4 @@ setInterval(async () => {
   } catch (error) {
     logger.error('Cleanup failed', { error: error.message });
   }
-}, 24 * 60 * 60 * 1000); 
+}, 24 * 60 * 60 * 1000); // Run every 24 hours

@@ -29,7 +29,8 @@ module.exports = new Command({
             name: 'character',
             description: 'Albion Online character name',
             type: 3,
-            required: true
+            required: true,
+            autocomplete: true
         }
     ],
     // Add autocomplete handler
