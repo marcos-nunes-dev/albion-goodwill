@@ -32,6 +32,50 @@ module.exports = new Command({
             required: true
         }
     ],
+    // Add autocomplete handler
+    async autocomplete(interaction) {
+        try {
+            const focusedValue = interaction.options.getFocused();
+            const region = interaction.options.getString('region');
+
+            if (!region || !focusedValue || focusedValue.length < 3) {
+                await interaction.respond([]);
+                return;
+            }
+
+            const apiEndpoint = {
+                'america': 'https://murderledger.albiononline2d.com',
+                'europe': 'https://murderledger-europe.albiononline2d.com',
+                'asia': 'https://murderledger-asia.albiononline2d.com'
+            }[region];
+
+            if (!apiEndpoint) {
+                await interaction.respond([]);
+                return;
+            }
+
+            const searchResponse = await axios.get(
+                `${apiEndpoint}/api/player-search/${encodeURIComponent(focusedValue)}`
+            );
+
+            const { results } = searchResponse.data;
+
+            if (!results || !results.length) {
+                await interaction.respond([]);
+                return;
+            }
+
+            await interaction.respond(
+                results.slice(0, 25).map(name => ({
+                    name,
+                    value: name
+                }))
+            );
+        } catch (error) {
+            console.error('Error in registerhim autocomplete:', error);
+            await interaction.respond([]);
+        }
+    },
     async execute(message, args, isSlash = false) {
         try {
             if (isSlash) {
