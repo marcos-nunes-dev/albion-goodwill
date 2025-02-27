@@ -110,23 +110,31 @@ module.exports = new Command({
 
             // Handle multiple results
             if (results.length > 1) {
-                const response = {
-                    embeds: [EmbedBuilder.warning([
-                        'Found multiple players:',
-                        results.map(name => `- ${name}`).join('\n'),
-                        'Please use the exact character name.'
-                    ].join('\n'))]
-                };
-                
-                if (interaction.isCommand?.()) {
-                    await interaction.editReply(response);
+                // Check if there's an exact match first
+                const exactMatch = results.find(name => name === nickname);
+                if (exactMatch) {
+                    // Use the exact match and continue with registration
+                    playerName = exactMatch;
                 } else {
-                    await interaction.edit(response);
+                    // No exact match found, show the list of similar names
+                    const response = {
+                        embeds: [EmbedBuilder.warning([
+                            'Found multiple players:',
+                            results.map(name => `- ${name}`).join('\n'),
+                            'Please use the exact character name.'
+                        ].join('\n'))]
+                    };
+                    
+                    if (interaction.isCommand?.()) {
+                        await interaction.editReply(response);
+                    } else {
+                        await interaction.edit(response);
+                    }
+                    return;
                 }
-                return;
+            } else {
+                playerName = results[0];
             }
-
-            const playerName = results[0];
 
             // Get guild settings
             const settings = await prisma.guildSettings.findUnique({

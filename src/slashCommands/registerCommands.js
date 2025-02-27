@@ -145,6 +145,15 @@ const commands = [
         .setName('refreshcommands')
         .setDescription('Refresh and re-register all slash commands')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder()
+        .setName('setsyncnickname')
+        .setDescription('Enable/disable automatic Albion nickname synchronization')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addBooleanOption(option =>
+            option.setName('enabled')
+                .setDescription('Enable or disable nickname sync')
+                .setRequired(true)
+        ),
 
     // Albion Commands
     new SlashCommandBuilder()
@@ -302,6 +311,20 @@ const commands = [
             option.setName('prefix')
                 .setDescription('Custom command prefix (must start with: ! $ % & * # @ ? .)')
                 .setRequired(false)
+        ),
+    new SlashCommandBuilder()
+        .setName('membersdiff')
+        .setDescription('Compare members in a role with a list from a text file')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addRoleOption(option =>
+            option.setName('members_role')
+                .setDescription('The role to check members against')
+                .setRequired(true)
+        )
+        .addAttachmentOption(option =>
+            option.setName('members_file')
+                .setDescription('Text file containing member list')
+                .setRequired(true)
         ),
 ];
 

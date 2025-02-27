@@ -60,6 +60,7 @@ model GuildSettings {
   nicknameVerifiedId   String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+  syncAlbionNickname   Boolean  @default(false)
 
   @@map("guild_settings")
 }
