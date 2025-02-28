@@ -2,7 +2,7 @@ const prisma = require('../config/prisma');
 const axios = require('axios');
 const FuzzySet = require('fuzzyset.js');
 const { updateBattleLogChannelName } = require('../utils/battleStats');
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 
 // Helper function to add delay between API calls
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -69,9 +69,48 @@ function calculateGuildStats(battleEvents, guildName) {
     return { kills, deaths, isVictory: kills > deaths };
 }
 
+// Helper function to send notification to admin
+async function notifyAdmin(client, results) {
+    try {
+        const notifyUserId = process.env.NOTIFY_USER_ID;
+        if (!notifyUserId) {
+            console.log('No NOTIFY_USER_ID set, skipping notification');
+            return;
+        }
+
+        const user = await client.users.fetch(notifyUserId);
+        if (!user) {
+            console.log('Could not find user to notify');
+            return;
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle('🔄 Battle Update Process')
+            .setDescription([
+                '**Process Summary:**',
+                `• Pending Battles Processed: ${results.processedCount || 0}`,
+                `• Guilds Updated: ${results.guildsUpdated || 0}`,
+                `• Errors Encountered: ${results.errors || 0}`,
+                '',
+                'For detailed logs, please check the application logs.'
+            ].join('\n'))
+            .setColor(results.errors > 0 ? '#FFA500' : '#00FF00')
+            .setTimestamp();
+
+        await user.send({ embeds: [embed] });
+    } catch (error) {
+        console.error('Error sending notification:', error);
+    }
+}
+
 async function updateBattles(providedClient = null) {
     let client = providedClient;
     let temporaryClient = null;
+    const results = {
+        processedCount: 0,
+        guildsUpdated: 0,
+        errors: 0
+    };
 
     try {
         // If no client provided, create a temporary one for the cron job
@@ -99,9 +138,11 @@ async function updateBattles(providedClient = null) {
 
         if (pendingBattles.length === 0) {
             console.log('No pending battles found');
+            await notifyAdmin(client, results);
             return;
         }
 
+        results.processedCount = pendingBattles.length;
         console.log(`Found ${pendingBattles.length} pending battles to process`);
 
         // Keep track of which guilds need channel updates
@@ -313,15 +354,20 @@ async function updateBattles(providedClient = null) {
                 if (settings?.battlelogChannelId) {
                     const guild = await client.guilds.fetch(guildId);
                     await updateBattleLogChannelName(guild, settings.battlelogChannelId);
+                    results.guildsUpdated++;
                 }
             } catch (error) {
                 console.error(`Error updating channel name for guild ${guildId}:`, error);
+                results.errors++;
             }
         }
 
         console.log('Battle update process completed');
+        await notifyAdmin(client, results);
     } catch (error) {
         console.error('Error in updateBattles:', error);
+        results.errors++;
+        await notifyAdmin(client, results);
     } finally {
         // Clean up temporary client if we created one
         if (temporaryClient) {

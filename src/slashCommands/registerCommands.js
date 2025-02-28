@@ -155,6 +155,15 @@ const commands = [
                 .setRequired(true)
         ),
     new SlashCommandBuilder()
+        .setName('setsyncbattles')
+        .setDescription('Enable/disable automatic Albion battle synchronization')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addBooleanOption(option =>
+            option.setName('enabled')
+                .setDescription('Enable or disable battle sync')
+                .setRequired(true)
+        ),
+    new SlashCommandBuilder()
         .setName('registerhim')
         .setDescription('Register an Albion Online character for another user (Admin only)')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)

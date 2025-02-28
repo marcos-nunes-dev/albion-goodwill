@@ -62,6 +62,7 @@ model GuildSettings {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
   syncAlbionNickname   Boolean  @default(false)
+  syncAlbionBattles    Boolean  @default(false)
 
   @@map("guild_settings")
 }

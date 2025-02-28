@@ -13,4 +13,12 @@ command = "node src/scripts/updateBattles.js"
 
 [[cron]]
 schedule = "0 0 * * *"   # Run at 00:00 UTC
-command = "node src/scripts/updateBattles.js" 
+command = "node src/scripts/updateBattles.js"
+
+[[cron]]
+schedule = "30 12 * * *"  # Run at 12:30 UTC
+command = "node src/scripts/syncAlbionBattles.js"
+
+[[cron]]
+schedule = "30 0 * * *"   # Run at 00:30 UTC
+command = "node src/scripts/syncAlbionBattles.js" 
