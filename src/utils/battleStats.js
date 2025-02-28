@@ -33,10 +33,14 @@ async function calculateBattleStats(guildId) {
             kdFormatted = stats.kills > 0 ? stats.kills.toString() : '0';
         } else {
             const kdRatio = stats.kills / stats.deaths;
-            // If KD is less than 1, show as negative
-            if (kdRatio < 1) {
-                kdFormatted = `-${(1/kdRatio).toFixed(1)}`.replace('.0', '');
+            if (stats.kills < stats.deaths) {
+                // More deaths than kills, show as negative
+                kdFormatted = `-${Math.round((stats.deaths - stats.kills) / stats.deaths * 10)}`;
+            } else if (kdRatio < 1) {
+                // Less than 1 KD but kills <= deaths, show with leading zero
+                kdFormatted = kdRatio.toFixed(1).replace('.', '');
             } else {
+                // Normal KD ratio >= 1
                 kdFormatted = kdRatio.toFixed(1).replace('.0', '');
             }
         }
