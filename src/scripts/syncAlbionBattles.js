@@ -224,6 +224,28 @@ async function syncAlbionBattles(providedClient = null) {
         }
 
         console.log('Battle sync process completed');
+
+        // Final update of all battle log channels to ensure they reflect the latest stats
+        console.log('Performing final channel name updates...');
+        const allGuildsWithBattleLogs = await prisma.guildSettings.findMany({
+            where: {
+                battlelogChannelId: {
+                    not: null
+                }
+            }
+        });
+
+        for (const settings of allGuildsWithBattleLogs) {
+            try {
+                const discordGuild = await client.guilds.fetch(settings.guildId);
+                await updateBattleLogChannelName(discordGuild, settings.battlelogChannelId);
+                console.log(`Updated channel name for guild: ${settings.guildName}`);
+            } catch (error) {
+                console.error(`Error updating channel name for guild ${settings.guildName}:`, error);
+                results.errors++;
+            }
+        }
+
         await notifyAdmin(client, results);
     } catch (error) {
         console.error('Error in syncAlbionBattles:', error);
