@@ -111,8 +111,24 @@ async function updateBattleLogChannelName(guild, channelId) {
         // Post new battles that haven't been posted yet
         for (const battle of battles) {
             if (!postedBattleIds.has(battle.id)) {
+                // Limit enemy guilds list to fit Discord's title limit
+                let enemyGuildsList = battle.enemyGuilds.join(', ');
+                if (enemyGuildsList.length > 200) { // Leave room for "🏆 Victory vs " or "💀 Defeat vs "
+                    const truncatedGuilds = [];
+                    let totalLength = 0;
+                    for (const guild of battle.enemyGuilds) {
+                        if (totalLength + guild.length + 2 > 197) { // +2 for ", " separator, leave room for "..."
+                            truncatedGuilds.push('...');
+                            break;
+                        }
+                        truncatedGuilds.push(guild);
+                        totalLength += guild.length + 2; // +2 for ", " separator
+                    }
+                    enemyGuildsList = truncatedGuilds.join(', ');
+                }
+
                 const battleEmbed = new EmbedBuilder()
-                    .setTitle(`${battle.isVictory ? '🏆 Victory' : '💀 Defeat'} vs ${battle.enemyGuilds.join(', ')}`)
+                    .setTitle(`${battle.isVictory ? '🏆 Victory' : '💀 Defeat'} vs ${enemyGuildsList}`)
                     .setDescription([
                         `⚔️ **Battle Stats**`,
                         `Kills: ${battle.kills || 0}`,

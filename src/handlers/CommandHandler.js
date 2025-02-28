@@ -393,90 +393,105 @@ class CommandHandler {
   }
 
   async handleInteraction(interaction) {
-    // Handle autocomplete interactions
-    if (interaction.isAutocomplete()) {
-      const command = this.commands.get(interaction.commandName);
-      if (!command || !command.autocomplete) return;
-
-      try {
-        await command.autocomplete(interaction);
-      } catch (error) {
-        console.error('Error in autocomplete:', error);
-      }
-      return;
-    }
-
     if (!interaction.isCommand()) return;
 
-    const command = this.commands.get(interaction.commandName);
-    if (!command) return;
+    const commandName = interaction.commandName;
 
     try {
-      // Check permissions
-      if (command.permissions?.length > 0) {
-        const missingPerms = command.permissions.filter(perm => !interaction.member.permissions.has(perm));
-        if (missingPerms.length > 0) {
-          return interaction.reply({
-            content: `You need the following permissions: ${missingPerms.join(', ')}`,
-            ephemeral: true
-          });
-        }
+      switch (commandName) {
+        case 'battleruncron':
+          await this.handleBattleRunCron(interaction);
+          break;
+        case 'syncbattlesbydate':
+          await this.handleSyncBattlesByDate(interaction);
+          break;
+        default:
+          const command = this.commands.get(commandName) ||
+            this.commands.find(cmd => cmd.aliases?.includes(commandName));
+
+          if (!command) return;
+
+          // Check permissions
+          if (command.permissions?.length > 0) {
+            const missingPerms = command.permissions.filter(perm => !interaction.member.permissions.has(perm));
+            if (missingPerms.length > 0) {
+              return interaction.reply({
+                content: `You need the following permissions: ${missingPerms.join(', ')}`,
+                ephemeral: true
+              });
+            }
+          }
+
+          // Check cooldown
+          if (!this.checkCooldown(interaction, command)) return;
+
+          // List of commands that don't require full configuration
+          const setupCommands = [
+            'settings',
+            'setprefix',
+            'setguildid',
+            'setguildname',
+            'setrole',
+            'setverifiedrole',
+            'competitors',
+            'help',
+            'ping',
+            'setup',
+            'refreshcommands',
+            'setupcreateroles'
+          ];
+
+          // Skip configuration check for setup commands
+          if (!setupCommands.includes(commandName)) {
+            const { validateGuildConfiguration } = require('../utils/validators');
+            const { isConfigured, missingFields } = await validateGuildConfiguration(interaction.guildId);
+
+            if (!isConfigured) {
+              const embed = new EmbedBuilder()
+                .setTitle('⚠️ Missing Configuration')
+                .setDescription('This command requires all guild settings to be configured first.')
+                .addFields({
+                  name: 'Missing Settings',
+                  value: missingFields.map(field => `• ${field}`).join('\n')
+                })
+                .addFields({
+                  name: 'How to Fix',
+                  value: 'Use `/settings` to view current settings and configure missing fields. You can use `/setup` to configure all settings manually or /setupcreateroles to create all roles automatically.'
+                })
+                .setColor(Colors.Yellow)
+                .setTimestamp();
+
+              return interaction.reply({ embeds: [embed], ephemeral: true });
+            }
+          }
+
+          // Execute command with handler instance
+          await command.execute(interaction, [], this);
       }
-
-      // Check cooldown
-      if (!this.checkCooldown(interaction, command)) return;
-
-      // List of commands that don't require full configuration
-      const setupCommands = [
-        'settings',
-        'setprefix',
-        'setguildid',
-        'setguildname',
-        'setrole',
-        'setverifiedrole',
-        'competitors',
-        'help',
-        'ping',
-        'setup',
-        'refreshcommands',
-        'setupcreateroles'
-      ];
-
-      // Skip configuration check for setup commands
-      if (!setupCommands.includes(interaction.commandName)) {
-        const { validateGuildConfiguration } = require('../utils/validators');
-        const { isConfigured, missingFields } = await validateGuildConfiguration(interaction.guildId);
-
-        if (!isConfigured) {
-          const embed = new EmbedBuilder()
-            .setTitle('⚠️ Missing Configuration')
-            .setDescription('This command requires all guild settings to be configured first.')
-            .addFields({
-              name: 'Missing Settings',
-              value: missingFields.map(field => `• ${field}`).join('\n')
-            })
-            .addFields({
-              name: 'How to Fix',
-              value: 'Use `/settings` to view current settings and configure missing fields. You can use `/setup` to configure all settings manually or /setupcreateroles to create all roles automatically.'
-            })
-            .setColor(Colors.Yellow)
-            .setTimestamp();
-
-          return interaction.reply({ embeds: [embed], ephemeral: true });
-        }
-      }
-
-      // Execute command with handler instance
-      await command.execute(interaction, [], this);
     } catch (error) {
-      console.error('Interaction error:', error);
-      const reply = { content: 'There was an error executing this command!', ephemeral: true };
-
+      console.error(`Error handling command ${commandName}:`, error);
+      const errorMessage = error.message || 'An error occurred while executing the command.';
       if (interaction.deferred) {
-        await interaction.editReply(reply);
+        await interaction.editReply({ content: `❌ ${errorMessage}`, ephemeral: true });
       } else {
-        await interaction.reply(reply);
+        await interaction.reply({ content: `❌ ${errorMessage}`, ephemeral: true });
       }
+    }
+  }
+
+  async handleSyncBattlesByDate(interaction) {
+    await interaction.deferReply();
+
+    try {
+      const targetDate = interaction.options.getString('date');
+      const syncAlbionBattlesByDate = require('../scripts/syncAlbionBattlesByDate');
+
+      await interaction.editReply(`🔄 Starting battle sync process for date: ${targetDate}...`);
+      await syncAlbionBattlesByDate(this.client, targetDate, interaction.guildId);
+      await interaction.editReply(`✅ Battle sync process completed for date: ${targetDate}. Check the battle log channel for details.`);
+    } catch (error) {
+      console.error('Error in handleSyncBattlesByDate:', error);
+      await interaction.editReply(`❌ Error: ${error.message}`);
     }
   }
 

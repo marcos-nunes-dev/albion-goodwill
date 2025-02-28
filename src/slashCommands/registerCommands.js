@@ -270,6 +270,15 @@ const commands = [
         .setName('battleruncron')
         .setDescription('Manually trigger battle updates for pending registrations')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder()
+        .setName('syncbattlesbydate')
+        .setDescription('Sync battles from Albion API for a specific date')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addStringOption(option =>
+            option.setName('date')
+                .setDescription('Target date (MM/DD format)')
+                .setRequired(true)
+        ),
 
     // Albion Commands
     new SlashCommandBuilder()
