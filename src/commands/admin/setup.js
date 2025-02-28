@@ -10,8 +10,13 @@ module.exports = new Command({
     permissions: ['ADMINISTRATOR'],
     cooldown: 30,
     async execute(message, args, handler) {
+        const isSlash = message.commandName === 'setup';
+        
         try {
-            const isSlash = message.commandName === 'setup';
+            // Defer the reply for slash commands since this might take a while
+            if (isSlash) {
+                await message.deferReply({ ephemeral: true });
+            }
             
             // Get parameters based on command type
             let guildId, guildName, verifiedRole, tankRole, healerRole, supportRole;
@@ -156,10 +161,16 @@ module.exports = new Command({
                     text: `Updated by ${isSlash ? message.user.tag : message.author.tag}`
                 });
 
-            await message.reply({
-                embeds: [setupEmbed],
-                ephemeral: isSlash
-            });
+            // Send response based on command type
+            if (isSlash) {
+                await message.editReply({
+                    embeds: [setupEmbed]
+                });
+            } else {
+                await message.reply({
+                    embeds: [setupEmbed]
+                });
+            }
 
         } catch (error) {
             console.error('Error in setup command:', error);
@@ -172,10 +183,22 @@ module.exports = new Command({
                     text: `Attempted by ${isSlash ? message.user.tag : message.author.tag}`
                 });
 
-            await message.reply({
-                embeds: [errorEmbed],
-                ephemeral: isSlash
-            });
+            if (isSlash) {
+                if (message.deferred) {
+                    await message.editReply({
+                        embeds: [errorEmbed]
+                    });
+                } else {
+                    await message.reply({
+                        embeds: [errorEmbed],
+                        ephemeral: true
+                    });
+                }
+            } else {
+                await message.reply({
+                    embeds: [errorEmbed]
+                });
+            }
         }
     }
 }); 
