@@ -10,6 +10,9 @@ const GuildManager = require('./services/GuildManager');
 const { registerSlashCommands } = require('./slashCommands/registerCommands');
 const logger = require('./utils/logger');
 
+// Import cron jobs
+require('./cron');
+
 console.log('Starting bot...');
 console.log('Checking required environment variables...');
 console.log('- DISCORD_TOKEN:', process.env.DISCORD_TOKEN ? 'Found' : 'Missing');
