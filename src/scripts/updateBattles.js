@@ -177,7 +177,7 @@ async function updateBattles() {
                     if (oldestBattleDay <= registeredBattleDay) {
                         foundTargetDay = true;
                         hasMorePages = false;
-                    } else if (apiBattles.length < 50) { // API limit reached
+                    } else if (apiBattles.length < 20) { // API limit reached
                         hasMorePages = false;
                     } else {
                         page++;
