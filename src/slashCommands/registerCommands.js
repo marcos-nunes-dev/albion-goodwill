@@ -1,4 +1,4 @@
-const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 const prisma = require('../config/prisma');
 
 const commands = [
@@ -258,7 +258,7 @@ const commands = [
                 .setRequired(false)
         ),
     new SlashCommandBuilder()
-        .setName('updatebattles')
+        .setName('battleruncron')
         .setDescription('Manually trigger battle updates for pending registrations')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
@@ -383,6 +383,12 @@ const commands = [
             option.setName('verified_role')
                 .setDescription('Role for verified members')
                 .setRequired(false)
+        )
+        .addChannelOption(option =>
+            option.setName('battlelog_channel')
+                .setDescription('Channel for battle logs')
+                .setRequired(false)
+                .addChannelTypes(ChannelType.GuildText)
         )
         .addRoleOption(option =>
             option.setName('tank_role')

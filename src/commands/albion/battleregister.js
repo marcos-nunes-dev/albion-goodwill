@@ -1,6 +1,7 @@
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
 const { EmbedBuilder, Colors } = require('discord.js');
+const { updateBattleLogChannelName } = require('../../utils/battleStats');
 
 module.exports = new Command({
     name: 'battleregister',
@@ -126,6 +127,11 @@ module.exports = new Command({
                     battleUrl: battleUrl || null
                 }
             });
+
+            // After successfully registering the battle, update the channel name
+            if (settings.battlelogChannelId) {
+                await updateBattleLogChannelName(message.guild, settings.battlelogChannelId);
+            }
 
             const formattedTime = battleTime.toISOString().replace('T', ' ').slice(0, -5) + ' UTC';
             const result = isVictory ? '🏆 Victory' : '💀 Defeat';

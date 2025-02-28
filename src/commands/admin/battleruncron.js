@@ -3,7 +3,7 @@ const { EmbedBuilder } = require('discord.js');
 const updateBattles = require('../../scripts/updateBattles');
 
 module.exports = new Command({
-    name: 'updatebattles',
+    name: 'battleruncron',
     description: 'Manually trigger battle updates for pending registrations',
     category: 'admin',
     permissions: ['Administrator'],
@@ -38,8 +38,8 @@ module.exports = new Command({
                 originalError.apply(console, args);
             };
 
-            // Run the update process
-            await updateBattles();
+            // Run the update process with client
+            await updateBattles(interaction.client);
 
             // Restore console functions
             console.log = originalLog;
@@ -56,7 +56,7 @@ module.exports = new Command({
             });
 
         } catch (error) {
-            console.error('Error in updatebattles command:', error);
+            console.error('Error in battleruncron command:', error);
             
             // Only send error response if we haven't replied yet
             if (!interaction.replied && !interaction.deferred) {

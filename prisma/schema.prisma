@@ -58,6 +58,7 @@ model GuildSettings {
   dpsRangedRoleId      String?
   battlemountRoleId    String?
   nicknameVerifiedId   String?
+  battlelogChannelId   String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
   syncAlbionNickname   Boolean  @default(false)

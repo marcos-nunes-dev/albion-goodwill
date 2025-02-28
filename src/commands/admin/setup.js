@@ -1,6 +1,7 @@
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
-const { EmbedBuilder, Colors } = require('discord.js');
+const { EmbedBuilder, Colors, PermissionFlagsBits } = require('discord.js');
+const { updateBattleLogChannelName } = require('../../utils/battleStats');
 
 module.exports = new Command({
     name: 'setup',
@@ -15,6 +16,7 @@ module.exports = new Command({
             // Get parameters based on command type
             let guildId, guildName, verifiedRole, tankRole, healerRole, supportRole;
             let meleeRole, rangedRole, mountRole, prefix;
+            let battlelogChannel;
 
             if (isSlash) {
                 guildId = message.options.getString('guild_id');
@@ -27,6 +29,7 @@ module.exports = new Command({
                 rangedRole = message.options.getRole('ranged_role');
                 mountRole = message.options.getRole('mount_role');
                 prefix = message.options.getString('prefix');
+                battlelogChannel = message.options.getChannel('battlelog_channel');
             }
 
             // Get current settings
@@ -46,7 +49,8 @@ module.exports = new Command({
                 dpsMeleeRoleId: meleeRole?.id || settings?.dpsMeleeRoleId,
                 dpsRangedRoleId: rangedRole?.id || settings?.dpsRangedRoleId,
                 battlemountRoleId: mountRole?.id || settings?.battlemountRoleId,
-                commandPrefix: prefix || settings?.commandPrefix
+                commandPrefix: prefix || settings?.commandPrefix,
+                battlelogChannelId: battlelogChannel?.id || settings?.battlelogChannelId
             };
 
             // Update database
@@ -55,6 +59,36 @@ module.exports = new Command({
                 update: updateData,
                 create: updateData
             });
+
+            // If battle log channel is set and it's a new channel, configure it
+            if (battlelogChannel && battlelogChannel.id !== settings?.battlelogChannelId) {
+                // Set proper permissions
+                await battlelogChannel.permissionOverwrites.set([
+                    {
+                        id: message.guild.roles.everyone.id,
+                        deny: [PermissionFlagsBits.SendMessages],
+                        allow: [PermissionFlagsBits.ViewChannel]
+                    },
+                    {
+                        id: message.client.user.id,
+                        allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.ViewChannel]
+                    }
+                ]);
+
+                // Send welcome message
+                const welcomeEmbed = new EmbedBuilder()
+                    .setTitle('📜 Battle Logs Channel')
+                    .setDescription('This channel will keep track of all registered battles.\nThe channel name will be automatically updated with current W/L and K/D stats.')
+                    .setColor(Colors.Blue)
+                    .setTimestamp();
+
+                await battlelogChannel.send({ embeds: [welcomeEmbed] });
+            }
+
+            // If battle log channel is set, update its name immediately
+            if (updateData.battlelogChannelId) {
+                await updateBattleLogChannelName(message.guild, updateData.battlelogChannelId);
+            }
 
             // Create response embed
             const checkMark = '✅';
@@ -107,6 +141,9 @@ module.exports = new Command({
                             `Command Prefix: ${updateData.commandPrefix ? 
                                 `${prefix ? newMark : checkMark} ${updateData.commandPrefix}` : 
                                 `${checkMark} Default (!albiongw)`}`,
+                            `Battle Log Channel: ${updateData.battlelogChannelId ? 
+                                `${battlelogChannel ? newMark : checkMark} <#${updateData.battlelogChannelId}>` : 
+                                `${crossMark} Not Set`}`,
                             `Competitor Guilds: ${settings?.competitorIds?.length ? 
                                 `${checkMark} ${settings.competitorIds.length} set` : 
                                 `${crossMark} None set`} (Use /competitors to manage)`

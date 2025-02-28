@@ -1,6 +1,7 @@
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
-const { EmbedBuilder, Colors, PermissionFlagsBits, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
+const { EmbedBuilder, Colors, PermissionFlagsBits, ButtonBuilder, ButtonStyle, ActionRowBuilder, ChannelType } = require('discord.js');
+const { calculateBattleStats, updateBattleLogChannelName } = require('../../utils/battleStats');
 
 module.exports = new Command({
     name: 'setupcreateroles',
@@ -30,7 +31,10 @@ module.exports = new Command({
                     '• 🐎 Battlemount',
                     '• ✅ Verified',
                     '',
-                    '**Note:** If these roles already exist, new ones will be created alongside them.',
+                    '**The following channel will be created:**',
+                    '• 📜 battle-logs',
+                    '',
+                    '**Note:** If these roles/channels already exist, new ones will be created alongside them.',
                     'Make sure this is what you want to do!'
                 ].join('\n'))
                 .setColor(Colors.Yellow)
@@ -169,6 +173,51 @@ module.exports = new Command({
                             console.error(`Error creating role ${roleConfig.name}:`, error);
                             errors.push(roleConfig.name);
                         }
+                    }
+
+                    // Create battle logs channel
+                    try {
+                        const stats = await calculateBattleStats(message.guildId);
+                        const channel = await message.guild.channels.create({
+                            name: 'battle-logs',
+                            type: ChannelType.GuildText,
+                            topic: 'Automatic battle logs from Albion Online',
+                            reason: 'Albion Online battle logs channel',
+                            permissionOverwrites: [
+                                {
+                                    id: message.guild.roles.everyone.id,
+                                    deny: [PermissionFlagsBits.SendMessages],
+                                    allow: [PermissionFlagsBits.ViewChannel]
+                                },
+                                {
+                                    id: message.client.user.id,
+                                    allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.ViewChannel]
+                                }
+                            ]
+                        });
+
+                        // Send welcome message
+                        const welcomeEmbed = new EmbedBuilder()
+                            .setTitle('📜 Battle Logs Channel')
+                            .setDescription('This channel will keep track of all registered battles.\nThe channel name will be automatically updated with current W/L and K/D stats.')
+                            .setColor(Colors.Blue)
+                            .setTimestamp();
+
+                        await channel.send({ embeds: [welcomeEmbed] });
+
+                        await prisma.guildSettings.update({
+                            where: { guildId: message.guildId },
+                            data: {
+                                battlelogChannelId: channel.id
+                            }
+                        });
+
+                        // Update the channel name immediately with current stats
+                        await updateBattleLogChannelName(message.guild, channel.id);
+                        createdRoles.push(`📜 Battle Logs Channel`);
+                    } catch (error) {
+                        console.error('Error creating battle-logs channel:', error);
+                        errors.push('📜 Battle Logs Channel');
                     }
 
                     // Create final response embed

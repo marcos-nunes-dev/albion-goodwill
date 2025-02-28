@@ -1,6 +1,8 @@
 const prisma = require('../config/prisma');
 const axios = require('axios');
 const FuzzySet = require('fuzzyset.js');
+const { updateBattleLogChannelName } = require('../utils/battleStats');
+const { Client, GatewayIntentBits } = require('discord.js');
 
 // Helper function to add delay between API calls
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -67,8 +69,23 @@ function calculateGuildStats(battleEvents, guildName) {
     return { kills, deaths, isVictory: kills > deaths };
 }
 
-async function updateBattles() {
+async function updateBattles(providedClient = null) {
+    let client = providedClient;
+    let temporaryClient = null;
+
     try {
+        // If no client provided, create a temporary one for the cron job
+        if (!client) {
+            temporaryClient = new Client({
+                intents: [
+                    GatewayIntentBits.Guilds,
+                    GatewayIntentBits.GuildMessages
+                ]
+            });
+            await temporaryClient.login(process.env.DISCORD_TOKEN);
+            client = temporaryClient;
+        }
+
         console.log('Starting battle update process...');
 
         const pendingBattles = await prisma.battleRegistration.findMany({
@@ -86,6 +103,9 @@ async function updateBattles() {
         }
 
         console.log(`Found ${pendingBattles.length} pending battles to process`);
+
+        // Keep track of which guilds need channel updates
+        const guildsToUpdate = new Set();
 
         for (const battle of pendingBattles) {
             try {
@@ -273,15 +293,40 @@ async function updateBattles() {
                 } else {
                     console.log(`Target day not yet available in API for ${guildName} vs ${battle.enemyGuilds.join(', ')}`);
                 }
+
+                // Add guild to update set whenever a battle is processed
+                guildsToUpdate.add(battle.guildId);
+
             } catch (battleError) {
                 console.error(`Error processing battle ${battle.id}:`, battleError);
                 continue;
             }
         }
 
+        // Update channel names for all affected guilds
+        for (const guildId of guildsToUpdate) {
+            try {
+                const settings = await prisma.guildSettings.findUnique({
+                    where: { guildId }
+                });
+
+                if (settings?.battlelogChannelId) {
+                    const guild = await client.guilds.fetch(guildId);
+                    await updateBattleLogChannelName(guild, settings.battlelogChannelId);
+                }
+            } catch (error) {
+                console.error(`Error updating channel name for guild ${guildId}:`, error);
+            }
+        }
+
         console.log('Battle update process completed');
     } catch (error) {
         console.error('Error in updateBattles:', error);
+    } finally {
+        // Clean up temporary client if we created one
+        if (temporaryClient) {
+            temporaryClient.destroy();
+        }
     }
 }
 
