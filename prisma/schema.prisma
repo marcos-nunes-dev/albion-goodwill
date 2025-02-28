@@ -90,6 +90,7 @@ model BattleRegistration {
   isVictory     Boolean  // Whether the battle was a victory or defeat
   kills         Int      // Amount of kills in the battle
   deaths        Int      // Amount of deaths in the battle
+  battleUrl     String?  // Optional URL to the battle report
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
