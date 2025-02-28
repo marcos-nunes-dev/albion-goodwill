@@ -27,12 +27,24 @@ async function calculateBattleStats(guildId) {
             return acc;
         }, { wins: 0, losses: 0, kills: 0, deaths: 0 });
 
-        const kd = stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(1) : stats.kills > 0 ? '∞' : '0';
+        // Calculate KD and format it
+        let kdFormatted;
+        if (stats.deaths === 0) {
+            kdFormatted = stats.kills > 0 ? stats.kills.toString() : '0';
+        } else {
+            const kdRatio = stats.kills / stats.deaths;
+            // If KD is less than 1, show as negative
+            if (kdRatio < 1) {
+                kdFormatted = `-${(1/kdRatio).toFixed(1)}`.replace('.0', '');
+            } else {
+                kdFormatted = kdRatio.toFixed(1).replace('.0', '');
+            }
+        }
         
         return {
             ...stats,
-            kd,
-            channelName: `🏆${stats.wins}-💀${stats.losses}・KD-${kd}`
+            kd: kdFormatted,
+            channelName: `🏆${stats.wins}-💀${stats.losses}・🩸${kdFormatted}`
         };
     } catch (error) {
         console.error('Error calculating battle stats:', error);
@@ -42,7 +54,7 @@ async function calculateBattleStats(guildId) {
             kills: 0,
             deaths: 0,
             kd: '0',
-            channelName: '🏆0-💀0・KD-0'
+            channelName: '🏆0-💀0・🩸0'
         };
     }
 }
