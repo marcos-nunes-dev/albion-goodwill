@@ -140,24 +140,29 @@ module.exports = new Command({
                         `${apiEndpoint}/players/${encodeURIComponent(nickname)}/ledger`
                     );
                     
-                    if (ledgerResponse.status === 200) {
+                    // Check if the response has events data
+                    const { events } = ledgerResponse.data;
+                    if (ledgerResponse.status === 200 && Array.isArray(events)) {
+                        // Even if events is empty, if we got a 200 and events array exists, the player exists
                         playerName = nickname;
                         playerFound = true;
                     }
                 } catch (ledgerError) {
-                    // If both attempts fail, player doesn't exist
-                    if (!playerFound) {
-                        const response = {
-                            embeds: [EmbedBuilder.error('Player not found.')]
-                        };
-                        
-                        if (interaction.isCommand?.()) {
-                            await interaction.editReply(response);
-                        } else {
-                            await interaction.edit(response);
-                        }
-                        return;
+                    console.error('Error checking player ledger:', ledgerError);
+                }
+
+                // If both attempts fail, player doesn't exist
+                if (!playerFound) {
+                    const response = {
+                        embeds: [EmbedBuilder.error('Player not found.')]
+                    };
+                    
+                    if (interaction.isCommand?.()) {
+                        await interaction.editReply(response);
+                    } else {
+                        await interaction.edit(response);
                     }
+                    return;
                 }
             }
 
