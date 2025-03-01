@@ -129,46 +129,71 @@ module.exports = new Command({
                 'asia': 'https://murderledger-asia.albiononline2d.com'
             }[region];
 
-            // Search for player
-            const searchResponse = await axios.get(
-                `${apiEndpoint}/api/player-search/${encodeURIComponent(nickname)}`
-            );
+            let playerName;
+            let playerFound = false;
 
-            const { results } = searchResponse.data;
+            // First try: Search for player using search API
+            try {
+                const searchResponse = await axios.get(
+                    `${apiEndpoint}/api/player-search/${encodeURIComponent(nickname)}`
+                );
 
-            if (!results || results.length === 0) {
-                const response = '❌ Player not found.';
-                if (isSlash) {
-                    await message.editReply(response);
-                } else {
-                    await message.reply(response);
+                const { results } = searchResponse.data;
+
+                if (results && results.length > 0) {
+                    // Handle multiple results
+                    if (results.length > 1) {
+                        // Check for exact match
+                        const exactMatch = results.find(name => name === nickname);
+                        if (exactMatch) {
+                            playerName = exactMatch;
+                            playerFound = true;
+                        } else {
+                            const response = [
+                                '❌ Found multiple players:',
+                                results.map(name => `- ${name}`).join('\n'),
+                                'Please use the exact character name.'
+                            ].join('\n');
+                            
+                            if (isSlash) {
+                                await message.editReply(response);
+                            } else {
+                                await message.reply(response);
+                            }
+                            return;
+                        }
+                    } else {
+                        playerName = results[0];
+                        playerFound = true;
+                    }
                 }
-                return;
+            } catch (searchError) {
+                console.error('Error searching for player:', searchError);
             }
 
-            // Handle multiple results
-            let playerName;
-            if (results.length > 1) {
-                // Check for exact match
-                const exactMatch = results.find(name => name === nickname);
-                if (exactMatch) {
-                    playerName = exactMatch;
-                } else {
-                    const response = [
-                        '❌ Found multiple players:',
-                        results.map(name => `- ${name}`).join('\n'),
-                        'Please use the exact character name.'
-                    ].join('\n');
+            // Second try: If player not found, check player's ledger directly
+            if (!playerFound) {
+                try {
+                    const ledgerResponse = await axios.get(
+                        `${apiEndpoint}/players/${encodeURIComponent(nickname)}/ledger`
+                    );
                     
-                    if (isSlash) {
-                        await message.editReply(response);
-                    } else {
-                        await message.reply(response);
+                    if (ledgerResponse.status === 200) {
+                        playerName = nickname;
+                        playerFound = true;
                     }
-                    return;
+                } catch (ledgerError) {
+                    // If both attempts fail, player doesn't exist
+                    if (!playerFound) {
+                        const response = '❌ Player not found.';
+                        if (isSlash) {
+                            await message.editReply(response);
+                        } else {
+                            await message.reply(response);
+                        }
+                        return;
+                    }
                 }
-            } else {
-                playerName = results[0];
             }
 
             // Check existing registration
