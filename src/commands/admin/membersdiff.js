@@ -115,7 +115,7 @@ module.exports = new Command({
                     Array.from(membersToRemove.values()) : 
                     membersWithoutReg;
                 
-                const totalPages = isRemoveList ? totalPagesRemove : totalPagesUnreg;
+                const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
                 const start = page * ITEMS_PER_PAGE;
                 const end = Math.min(start + ITEMS_PER_PAGE, items.length);
                 const pageItems = items.slice(start, end);
@@ -132,7 +132,7 @@ module.exports = new Command({
                     .setColor(isRemoveList ? 0xFF4444 : 0xFFAA00)
                     .setDescription(description || 'No members found.')
                     .setFooter({ 
-                        text: `Page ${page + 1}/${totalPages || 1} • ` +
+                        text: `Page ${page + 1}/${totalPages} • ` +
                               `Total to remove: ${membersToRemove.size} • ` +
                               `Total without registration: ${membersWithoutReg.length}`
                     })
@@ -141,7 +141,12 @@ module.exports = new Command({
 
             // Create navigation buttons
             const getButtons = (page, listType) => {
-                const totalPages = listType === 'remove' ? totalPagesRemove : totalPagesUnreg;
+                const isRemoveList = listType === 'remove';
+                const items = isRemoveList ? 
+                    Array.from(membersToRemove.values()) : 
+                    membersWithoutReg;
+                const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
+                
                 const navigationButtons = new ActionRowBuilder().addComponents([
                     new ButtonBuilder()
                         .setCustomId('first')
@@ -209,63 +214,86 @@ module.exports = new Command({
                     return;
                 }
 
-                // Handle button clicks
-                switch (interaction.customId) {
-                    case 'remove_permissions':
-                        try {
-                            await interaction.deferUpdate();
-                            let removed = 0;
-                            for (const member of membersToRemove.values()) {
-                                try {
-                                    await member.roles.remove(role);
-                                    removed++;
-                                } catch (error) {
-                                    console.error(`Failed to remove role from ${member.id}:`, error);
-                                }
-                            }
-                            
-                            await interaction.followUp({
-                                content: `✅ Removed role from ${removed} members.`,
-                                ephemeral: true
-                            });
+                try {
+                    const totalPages = Math.max(1, Math.ceil((currentList === 'remove' ? membersToRemove.size : membersWithoutReg.length) / ITEMS_PER_PAGE));
 
-                            // Update the embed to reflect changes
-                            await interaction.editReply({
+                    // Handle button clicks
+                    switch (interaction.customId) {
+                        case 'remove_permissions':
+                            try {
+                                await interaction.deferUpdate();
+                                let removed = 0;
+                                for (const member of membersToRemove.values()) {
+                                    try {
+                                        await member.roles.remove(role);
+                                        removed++;
+                                    } catch (error) {
+                                        console.error(`Failed to remove role from ${member.id}:`, error);
+                                    }
+                                }
+                                
+                                await interaction.followUp({
+                                    content: `✅ Removed role from ${removed} members.`,
+                                    ephemeral: true
+                                });
+
+                                // Update the embed to reflect changes
+                                await interaction.editReply({
+                                    embeds: [getPageEmbed(currentPage, currentList)],
+                                    components: getButtons(currentPage, currentList)
+                                });
+                            } catch (error) {
+                                console.error('Error removing permissions:', error);
+                                await interaction.followUp({
+                                    content: '❌ Error removing permissions.',
+                                    ephemeral: true
+                                });
+                            }
+                            break;
+
+                        case 'toggle':
+                            currentList = currentList === 'remove' ? 'unreg' : 'remove';
+                            currentPage = 0;
+                            await interaction.update({
                                 embeds: [getPageEmbed(currentPage, currentList)],
                                 components: getButtons(currentPage, currentList)
                             });
-                        } catch (error) {
-                            console.error('Error removing permissions:', error);
-                            await interaction.followUp({
-                                content: '❌ Error removing permissions.',
-                                ephemeral: true
+                            break;
+                        case 'first':
+                            currentPage = 0;
+                            await interaction.update({
+                                embeds: [getPageEmbed(currentPage, currentList)],
+                                components: getButtons(currentPage, currentList)
                             });
-                        }
-                        break;
-
-                    case 'toggle':
-                        currentList = currentList === 'remove' ? 'unreg' : 'remove';
-                        currentPage = 0;
-                        await interaction.update({
-                            embeds: [getPageEmbed(currentPage, currentList)],
-                            components: getButtons(currentPage, currentList)
-                        });
-                        break;
-                    case 'first':
-                        currentPage = 0;
-                        break;
-                    case 'prev':
-                        currentPage = Math.max(0, currentPage - 1);
-                        break;
-                    case 'next':
-                        currentPage = Math.min(
-                            (currentList === 'remove' ? totalPagesRemove : totalPagesUnreg) - 1,
-                            currentPage + 1
-                        );
-                        break;
-                    case 'last':
-                        currentPage = (currentList === 'remove' ? totalPagesRemove : totalPagesUnreg) - 1;
-                        break;
+                            break;
+                        case 'prev':
+                            currentPage = Math.max(0, currentPage - 1);
+                            await interaction.update({
+                                embeds: [getPageEmbed(currentPage, currentList)],
+                                components: getButtons(currentPage, currentList)
+                            });
+                            break;
+                        case 'next':
+                            currentPage = Math.min(totalPages - 1, currentPage + 1);
+                            await interaction.update({
+                                embeds: [getPageEmbed(currentPage, currentList)],
+                                components: getButtons(currentPage, currentList)
+                            });
+                            break;
+                        case 'last':
+                            currentPage = totalPages - 1;
+                            await interaction.update({
+                                embeds: [getPageEmbed(currentPage, currentList)],
+                                components: getButtons(currentPage, currentList)
+                            });
+                            break;
+                    }
+                } catch (error) {
+                    console.error('Error handling button interaction:', error);
+                    await interaction.reply({
+                        content: 'An error occurred while updating the page.',
+                        ephemeral: true
+                    });
                 }
             });
 
