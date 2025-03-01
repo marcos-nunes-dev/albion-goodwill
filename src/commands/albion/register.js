@@ -88,52 +88,77 @@ module.exports = new Command({
                 'asia': 'https://murderledger-asia.albiononline2d.com'
             }[region];
 
-            // Search for player
-            const searchResponse = await axios.get(
-                `${apiEndpoint}/api/player-search/${encodeURIComponent(nickname)}`
-            );
+            let playerName;
+            let playerFound = false;
 
-            const { results } = searchResponse.data;
+            // First try: Search for player using search API
+            try {
+                const searchResponse = await axios.get(
+                    `${apiEndpoint}/api/player-search/${encodeURIComponent(nickname)}`
+                );
 
-            if (!results || results.length === 0) {
-                const response = {
-                    embeds: [EmbedBuilder.error('Player not found.')]
-                };
-                
-                if (interaction.isCommand?.()) {
-                    await interaction.editReply(response);
-                } else {
-                    await interaction.edit(response);
+                const { results } = searchResponse.data;
+
+                if (results && results.length > 0) {
+                    // Handle multiple results
+                    if (results.length > 1) {
+                        // Check if there's an exact match first
+                        const exactMatch = results.find(name => name === nickname);
+                        if (exactMatch) {
+                            playerName = exactMatch;
+                            playerFound = true;
+                        } else {
+                            // No exact match found, show the list of similar names
+                            const response = {
+                                embeds: [EmbedBuilder.warning([
+                                    'Found multiple players:',
+                                    results.map(name => `- ${name}`).join('\n'),
+                                    'Please use the exact character name.'
+                                ].join('\n'))]
+                            };
+                            
+                            if (interaction.isCommand?.()) {
+                                await interaction.editReply(response);
+                            } else {
+                                await interaction.edit(response);
+                            }
+                            return;
+                        }
+                    } else {
+                        playerName = results[0];
+                        playerFound = true;
+                    }
                 }
-                return;
+            } catch (searchError) {
+                console.error('Error searching for player:', searchError);
             }
 
-            // Handle multiple results
-            if (results.length > 1) {
-                // Check if there's an exact match first
-                const exactMatch = results.find(name => name === nickname);
-                if (exactMatch) {
-                    // Use the exact match and continue with registration
-                    playerName = exactMatch;
-                } else {
-                    // No exact match found, show the list of similar names
-                    const response = {
-                        embeds: [EmbedBuilder.warning([
-                            'Found multiple players:',
-                            results.map(name => `- ${name}`).join('\n'),
-                            'Please use the exact character name.'
-                        ].join('\n'))]
-                    };
+            // Second try: If player not found, check player's ledger directly
+            if (!playerFound) {
+                try {
+                    const ledgerResponse = await axios.get(
+                        `${apiEndpoint}/players/${encodeURIComponent(nickname)}/ledger`
+                    );
                     
-                    if (interaction.isCommand?.()) {
-                        await interaction.editReply(response);
-                    } else {
-                        await interaction.edit(response);
+                    if (ledgerResponse.status === 200) {
+                        playerName = nickname;
+                        playerFound = true;
                     }
-                    return;
+                } catch (ledgerError) {
+                    // If both attempts fail, player doesn't exist
+                    if (!playerFound) {
+                        const response = {
+                            embeds: [EmbedBuilder.error('Player not found.')]
+                        };
+                        
+                        if (interaction.isCommand?.()) {
+                            await interaction.editReply(response);
+                        } else {
+                            await interaction.edit(response);
+                        }
+                        return;
+                    }
                 }
-            } else {
-                playerName = results[0];
             }
 
             // Get guild settings
@@ -295,7 +320,6 @@ module.exports = new Command({
                     await interaction.edit(response);
                 }
             }
-
         } catch (error) {
             console.error('Error registering player:', error);
             const response = {
