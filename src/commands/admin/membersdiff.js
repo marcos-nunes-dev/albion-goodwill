@@ -102,49 +102,88 @@ module.exports = new Command({
             const registeredNames = new Set(registeredPlayers.map(reg => reg.playerName));
             const membersWithoutReg = fileMembers.filter(name => !registeredNames.has(name));
 
+            // Find members without role (registered but don't have the role)
+            const membersWithoutRole = await prisma.playerRegistration.findMany({
+                where: {
+                    playerName: {
+                        in: fileMembers
+                    },
+                    NOT: {
+                        userId: {
+                            in: [...role.members.keys()]
+                        }
+                    }
+                }
+            });
+
             // Setup pagination
             const totalPagesRemove = Math.ceil(membersToRemove.size / ITEMS_PER_PAGE);
             const totalPagesUnreg = Math.ceil(membersWithoutReg.length / ITEMS_PER_PAGE);
+            const totalPagesNoRole = Math.ceil(membersWithoutRole.length / ITEMS_PER_PAGE);
             let currentPage = 0;
-            let currentList = 'remove'; // 'remove' or 'unreg'
+            let currentList = 'remove'; // 'remove' or 'unreg' or 'norole'
 
             // Create page embed
             const getPageEmbed = (page, listType) => {
-                const isRemoveList = listType === 'remove';
-                const items = isRemoveList ? 
-                    Array.from(membersToRemove.values()) : 
-                    membersWithoutReg;
+                let items, title, color, formatItem;
                 
+                switch(listType) {
+                    case 'remove':
+                        items = Array.from(membersToRemove.values());
+                        title = '🔄 Members to Remove';
+                        color = 0xFF4444;
+                        formatItem = (member) => {
+                            const reg = registeredPlayers.find(r => r.userId === member.id);
+                            return `<@${member.id}> (${reg?.playerName || 'Unknown'})`;
+                        };
+                        break;
+                    case 'unreg':
+                        items = membersWithoutReg;
+                        title = '⚠️ Members Without Registration';
+                        color = 0xFFAA00;
+                        formatItem = (name) => name;
+                        break;
+                    case 'norole':
+                        items = membersWithoutRole;
+                        title = '👥 Registered Members Without Role';
+                        color = 0x00AAFF;
+                        formatItem = (reg) => `${reg.playerName} (<@${reg.userId}>)`;
+                        break;
+                }
+
                 const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
                 const start = page * ITEMS_PER_PAGE;
                 const end = Math.min(start + ITEMS_PER_PAGE, items.length);
                 const pageItems = items.slice(start, end);
 
-                const description = isRemoveList ?
-                    pageItems.map(member => {
-                        const reg = registeredPlayers.find(r => r.userId === member.id);
-                        return `<@${member.id}> (${reg?.playerName || 'Unknown'})`;
-                    }).join('\n') :
-                    pageItems.join('\n');
-
                 return new EmbedBuilder()
-                    .setTitle(isRemoveList ? '🔄 Members to Remove' : '⚠️ Members Without Registration')
-                    .setColor(isRemoveList ? 0xFF4444 : 0xFFAA00)
-                    .setDescription(description || 'No members found.')
+                    .setTitle(title)
+                    .setColor(color)
+                    .setDescription(pageItems.map(formatItem).join('\n') || 'No members found.')
                     .setFooter({ 
                         text: `Page ${page + 1}/${totalPages} • ` +
-                              `Total to remove: ${membersToRemove.size} • ` +
-                              `Total without registration: ${membersWithoutReg.length}`
+                              `To remove: ${membersToRemove.size} • ` +
+                              `Without registration: ${membersWithoutReg.length} • ` +
+                              `Without role: ${membersWithoutRole.length}`
                     })
                     .setTimestamp();
             };
 
             // Create navigation buttons
             const getButtons = (page, listType) => {
-                const isRemoveList = listType === 'remove';
-                const items = isRemoveList ? 
-                    Array.from(membersToRemove.values()) : 
-                    membersWithoutReg;
+                let items;
+                switch(listType) {
+                    case 'remove':
+                        items = Array.from(membersToRemove.values());
+                        break;
+                    case 'unreg':
+                        items = membersWithoutReg;
+                        break;
+                    case 'norole':
+                        items = membersWithoutRole;
+                        break;
+                }
+                
                 const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
                 
                 const navigationButtons = new ActionRowBuilder().addComponents([
@@ -170,7 +209,11 @@ module.exports = new Command({
                         .setDisabled(page === totalPages - 1),
                     new ButtonBuilder()
                         .setCustomId('toggle')
-                        .setLabel(listType === 'remove' ? 'Show Unregistered' : 'Show To Remove')
+                        .setLabel(
+                            listType === 'remove' ? 'Show Unregistered' :
+                            listType === 'unreg' ? 'Show Without Role' :
+                            'Show To Remove'
+                        )
                         .setStyle(ButtonStyle.Secondary)
                 ]);
 
@@ -215,7 +258,7 @@ module.exports = new Command({
                 }
 
                 try {
-                    const totalPages = Math.max(1, Math.ceil((currentList === 'remove' ? membersToRemove.size : membersWithoutReg.length) / ITEMS_PER_PAGE));
+                    const totalPages = Math.max(1, Math.ceil((currentList === 'remove' ? membersToRemove.size : currentList === 'unreg' ? membersWithoutReg.length : membersWithoutRole.length) / ITEMS_PER_PAGE));
 
                     // Handle button clicks
                     switch (interaction.customId) {
@@ -223,12 +266,44 @@ module.exports = new Command({
                             try {
                                 await interaction.deferUpdate();
                                 let removed = 0;
-                                for (const member of membersToRemove.values()) {
+                                let items;
+                                switch (currentList) {
+                                    case 'remove':
+                                        items = Array.from(membersToRemove.values());
+                                        break;
+                                    case 'unreg':
+                                        items = membersWithoutReg;
+                                        break;
+                                    case 'norole':
+                                        items = membersWithoutRole;
+                                        break;
+                                }
+                                for (const item of items) {
                                     try {
-                                        await member.roles.remove(role);
-                                        removed++;
+                                        if (currentList === 'remove') {
+                                            const member = item;
+                                            const playerReg = registeredPlayers.find(reg => reg.userId === member.id);
+                                            if (playerReg) {
+                                                await member.roles.remove(role);
+                                                removed++;
+                                            }
+                                        } else if (currentList === 'unreg') {
+                                            const name = item;
+                                            const playerReg = registeredPlayers.find(reg => reg.playerName === name);
+                                            if (playerReg) {
+                                                await member.roles.remove(role);
+                                                removed++;
+                                            }
+                                        } else if (currentList === 'norole') {
+                                            const reg = item;
+                                            const playerReg = registeredPlayers.find(r => r.playerName === reg.playerName && r.userId === reg.userId);
+                                            if (playerReg) {
+                                                await member.roles.remove(role);
+                                                removed++;
+                                            }
+                                        }
                                     } catch (error) {
-                                        console.error(`Failed to remove role from ${member.id}:`, error);
+                                        console.error(`Failed to remove role from ${item.id || item.playerName}:`, error);
                                     }
                                 }
                                 
@@ -252,7 +327,8 @@ module.exports = new Command({
                             break;
 
                         case 'toggle':
-                            currentList = currentList === 'remove' ? 'unreg' : 'remove';
+                            currentList = currentList === 'remove' ? 'unreg' : 
+                                        currentList === 'unreg' ? 'norole' : 'remove';
                             currentPage = 0;
                             await interaction.update({
                                 embeds: [getPageEmbed(currentPage, currentList)],
