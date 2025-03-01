@@ -1,7 +1,14 @@
 const { EmbedBuilder, PermissionFlagsBits, Colors } = require('discord.js');
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
-const axios = require('axios');
+const {
+    getApiEndpoint,
+    findPlayer,
+    checkPlayerNameAvailability,
+    registerPlayer,
+    handleRolesAndNickname,
+    handleAutocomplete
+} = require('../../utils/albionRegistration');
 
 module.exports = new Command({
     name: 'registerhim',
@@ -35,47 +42,7 @@ module.exports = new Command({
     ],
     // Add autocomplete handler
     async autocomplete(interaction) {
-        try {
-            const focusedValue = interaction.options.getFocused();
-            const region = interaction.options.getString('region');
-
-            if (!region || !focusedValue || focusedValue.length < 3) {
-                await interaction.respond([]);
-                return;
-            }
-
-            const apiEndpoint = {
-                'america': 'https://murderledger.albiononline2d.com',
-                'europe': 'https://murderledger-europe.albiononline2d.com',
-                'asia': 'https://murderledger-asia.albiononline2d.com'
-            }[region];
-
-            if (!apiEndpoint) {
-                await interaction.respond([]);
-                return;
-            }
-
-            const searchResponse = await axios.get(
-                `${apiEndpoint}/api/player-search/${encodeURIComponent(focusedValue)}`
-            );
-
-            const { results } = searchResponse.data;
-
-            if (!results || !results.length) {
-                await interaction.respond([]);
-                return;
-            }
-
-            await interaction.respond(
-                results.slice(0, 25).map(name => ({
-                    name,
-                    value: name
-                }))
-            );
-        } catch (error) {
-            console.error('Error in registerhim autocomplete:', error);
-            await interaction.respond([]);
-        }
+        await handleAutocomplete(interaction);
     },
     async execute(message, args, isSlash = false) {
         try {
@@ -122,91 +89,44 @@ module.exports = new Command({
                 return;
             }
 
-            // Select API endpoint based on region
-            const apiEndpoint = {
-                'america': 'https://murderledger.albiononline2d.com',
-                'europe': 'https://murderledger-europe.albiononline2d.com',
-                'asia': 'https://murderledger-asia.albiononline2d.com'
-            }[region];
-
-            let playerName;
-            let playerFound = false;
-
-            // First try: Search for player using search API
-            try {
-                const searchResponse = await axios.get(
-                    `${apiEndpoint}/api/player-search/${encodeURIComponent(nickname)}`
-                );
-
-                const { results } = searchResponse.data;
-
-                if (results && results.length > 0) {
-                    // Handle multiple results
-                    if (results.length > 1) {
-                        // Check for exact match
-                        const exactMatch = results.find(name => name === nickname);
-                        if (exactMatch) {
-                            playerName = exactMatch;
-                            playerFound = true;
-                        } else {
-                            const response = [
-                                '❌ Found multiple players:',
-                                results.map(name => `- ${name}`).join('\n'),
-                                'Please use the exact character name.'
-                            ].join('\n');
-                            
-                            if (isSlash) {
-                                await message.editReply(response);
-                            } else {
-                                await message.reply(response);
-                            }
-                            return;
-                        }
-                    } else {
-                        playerName = results[0];
-                        playerFound = true;
-                    }
+            const apiEndpoint = getApiEndpoint(region);
+            if (!apiEndpoint) {
+                const response = '❌ Invalid region. Use: america, europe or asia';
+                if (isSlash) {
+                    await message.editReply(response);
+                } else {
+                    await message.reply(response);
                 }
-            } catch (searchError) {
-                console.error('Error searching for player:', searchError);
+                return;
             }
 
-            // Second try: If player not found, check player's ledger directly
-            if (!playerFound) {
-                try {
-                    const ledgerResponse = await axios.get(
-                        `${apiEndpoint}/api/players/${encodeURIComponent(nickname)}/events?skip=0`
-                    );
-                    
-                    // Check if the response has events data
-                    const { events } = ledgerResponse.data;
-                    if (ledgerResponse.status === 200 && events.length > 0) {
-                        // Even if events is empty, if we got a 200 and events array exists, the player exists
-                        playerName = nickname;
-                        playerFound = true;
-                    }
-                } catch (ledgerError) {
-                    console.error('Error checking player ledger:', ledgerError);
-                }
+            // Find player
+            const playerResult = await findPlayer(nickname, apiEndpoint);
 
-                // If both attempts fail, player doesn't exist
-                if (!playerFound) {
-                    const response = '❌ Player not found.';
-                    if (isSlash) {
-                        await message.editReply(response);
-                    } else {
-                        await message.reply(response);
-                    }
-                    return;
+            if (!playerResult.found) {
+                let response;
+                if (playerResult.multipleResults) {
+                    response = [
+                        '❌ Found multiple players:',
+                        playerResult.multipleResults.map(name => `- ${name}`).join('\n'),
+                        'Please use the exact character name.'
+                    ].join('\n');
+                } else {
+                    response = '❌ Player not found.';
                 }
+                
+                if (isSlash) {
+                    await message.editReply(response);
+                } else {
+                    await message.reply(response);
+                }
+                return;
             }
 
-            // Check existing registration
-            const existingRegistration = await prisma.playerRegistration.findFirst({
-                where: { playerName }
-            });
+            const { playerName } = playerResult;
 
-            if (existingRegistration && existingRegistration.userId !== targetUser.id) {
+            // Check if player name is available
+            if (!await checkPlayerNameAvailability(playerName, targetUser.id)) {
                 const response = `❌ "${playerName}" is already registered by another user.`;
                 if (isSlash) {
                     await message.editReply(response);
@@ -216,89 +136,57 @@ module.exports = new Command({
                 return;
             }
 
-            // Update or create registration
-            await prisma.playerRegistration.upsert({
-                where: {
-                    playerName: playerName
-                },
-                update: {
-                    region,
-                    guildId: message.guildId,
-                    albionGuildId: settings.albionGuildId,
-                    userId: targetUser.id
-                },
-                create: {
-                    userId: targetUser.id,
-                    guildId: message.guildId,
-                    region,
-                    playerName,
-                    albionGuildId: settings.albionGuildId
-                }
+            // Register player
+            await registerPlayer({
+                userId: targetUser.id,
+                guildId: message.guildId,
+                region,
+                playerName,
+                albionGuildId: settings.albionGuildId
             });
 
-            try {
-                // Add verified role and update nickname if sync is enabled
-                const verifiedRole = await message.guild.roles.fetch(settings.nicknameVerifiedId);
-                if (verifiedRole) {
-                    await targetMember.roles.add(verifiedRole);
-                }
+            // Handle roles and nickname
+            const roleResult = await handleRolesAndNickname({
+                member: targetMember,
+                guild: message.guild,
+                settings,
+                playerName
+            });
 
-                // Set nickname if sync is enabled
-                let nicknameStatus = '🎭 Verified role assigned';
-                if (settings.syncAlbionNickname) {
-                    try {
-                        await targetMember.setNickname(playerName);
-                        nicknameStatus += '\n🔄 Nickname synchronized';
-                    } catch (nickError) {
-                        console.error('Error setting nickname:', nickError);
-                        nicknameStatus += '\n⚠️ Failed to synchronize nickname';
-                    }
-                }
+            const response = {
+                embeds: [
+                    new EmbedBuilder()
+                        .setTitle(roleResult.success ? '✅ Registration Successful' : '⚠️ Partial Registration')
+                        .setDescription(`Successfully registered Albion Online character for ${targetUser.toString()}`)
+                        .addFields([
+                            {
+                                name: 'Character Name',
+                                value: `\`${playerName}\``,
+                                inline: true
+                            },
+                            {
+                                name: 'Region',
+                                value: `\`${region.charAt(0).toUpperCase() + region.slice(1)}\``,
+                                inline: true
+                            },
+                            {
+                                name: 'Status',
+                                value: roleResult.status,
+                                inline: true
+                            }
+                        ])
+                        .setColor(roleResult.success ? Colors.Green : Colors.Yellow)
+                        .setTimestamp()
+                        .setFooter({ 
+                            text: `Registered by ${message.user?.tag || message.author.tag}` 
+                        })
+                ]
+            };
 
-                const response = {
-                    embeds: [
-                        new EmbedBuilder()
-                            .setTitle('✅ Registration Successful')
-                            .setDescription(`Successfully registered Albion Online character for ${targetUser.toString()}`)
-                            .addFields([
-                                {
-                                    name: 'Character Name',
-                                    value: `\`${playerName}\``,
-                                    inline: true
-                                },
-                                {
-                                    name: 'Region',
-                                    value: `\`${region.charAt(0).toUpperCase() + region.slice(1)}\``,
-                                    inline: true
-                                },
-                                {
-                                    name: 'Status',
-                                    value: nicknameStatus,
-                                    inline: true
-                                }
-                            ])
-                            .setColor(Colors.Green)
-                            .setTimestamp()
-                            .setFooter({ 
-                                text: `Registered by ${message.user?.tag || message.author.tag}` 
-                            })
-                    ]
-                };
-
-                if (isSlash) {
-                    await message.editReply(response);
-                } else {
-                    await message.reply(response);
-                }
-
-            } catch (error) {
-                console.error('Error in registration process:', error);
-                const errorMessage = 'An error occurred during the registration process.';
-                if (isSlash) {
-                    await message.editReply(errorMessage);
-                } else {
-                    await message.reply(errorMessage);
-                }
+            if (isSlash) {
+                await message.editReply(response);
+            } else {
+                await message.reply(response);
             }
 
         } catch (error) {

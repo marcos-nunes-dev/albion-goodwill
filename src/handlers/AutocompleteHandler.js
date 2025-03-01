@@ -23,6 +23,7 @@ class AutocompleteHandler {
 
                 case 'register':
                 case 'registerhim':
+                case 'apply':
                     if (focusedOption.name === 'character') {
                         const region = interaction.options.getString('region');
                         if (region) {

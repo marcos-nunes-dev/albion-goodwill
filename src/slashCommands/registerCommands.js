@@ -358,6 +358,25 @@ const commands = [
                 .setRequired(true)
                 .setAutocomplete(true)
         ),
+    new SlashCommandBuilder()
+        .setName('apply')
+        .setDescription('Register and check weapon statistics for your Albion Online character')
+        .addStringOption(option =>
+            option.setName('region')
+                .setDescription('Your region')
+                .setRequired(true)
+                .addChoices(
+                    { name: 'America', value: 'america' },
+                    { name: 'Europe', value: 'europe' },
+                    { name: 'Asia', value: 'asia' }
+                )
+        )
+        .addStringOption(option =>
+            option.setName('character')
+                .setDescription('Your Albion Online character name')
+                .setRequired(true)
+                .setAutocomplete(true)
+        ),
 
     // Stats Commands
     new SlashCommandBuilder()
