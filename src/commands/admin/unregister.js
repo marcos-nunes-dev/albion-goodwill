@@ -9,9 +9,16 @@ module.exports = new Command({
     usage: '<player_name>',
     permissions: ['ADMINISTRATOR'],
     cooldown: 5,
-    async execute(message, args, handler) {
+    async execute(message, args) {
         try {
+            // Check if it's a slash command
             const isSlash = message.commandName === 'unregister';
+
+            // Defer the reply for slash commands
+            if (isSlash) {
+                await message.deferReply();
+            }
+
             const targetUser = isSlash ? 
                 message.options.getUser('user') : 
                 message.mentions.users.first();
@@ -37,10 +44,11 @@ module.exports = new Command({
                     .setColor(Colors.Yellow)
                     .setTimestamp();
 
-                await message.reply({
-                    embeds: [errorEmbed],
-                    ephemeral: isSlash
-                });
+                if (isSlash) {
+                    await message.editReply({ embeds: [errorEmbed] });
+                } else {
+                    await message.reply({ embeds: [errorEmbed] });
+                }
                 return;
             }
 
@@ -59,10 +67,11 @@ module.exports = new Command({
                     .setColor(Colors.Red)
                     .setTimestamp();
 
-                await message.reply({
-                    embeds: [notFoundEmbed],
-                    ephemeral: isSlash
-                });
+                if (isSlash) {
+                    await message.editReply({ embeds: [notFoundEmbed] });
+                } else {
+                    await message.reply({ embeds: [notFoundEmbed] });
+                }
                 return;
             }
 
@@ -120,10 +129,11 @@ module.exports = new Command({
                     text: `Unregistered by ${isSlash ? message.user.tag : message.author.tag}`
                 });
 
-            await message.reply({
-                embeds: [successEmbed],
-                ephemeral: isSlash
-            });
+            if (isSlash) {
+                await message.editReply({ embeds: [successEmbed] });
+            } else {
+                await message.reply({ embeds: [successEmbed] });
+            }
 
         } catch (error) {
             console.error('Error unregistering user:', error);
@@ -133,13 +143,14 @@ module.exports = new Command({
                 .setColor(Colors.Red)
                 .setTimestamp()
                 .setFooter({
-                    text: `Attempted by ${isSlash ? message.user.tag : message.author.tag}`
+                    text: `Attempted by ${message.user?.tag || message.author.tag}`
                 });
 
-            await message.reply({
-                embeds: [errorEmbed],
-                ephemeral: isSlash
-            });
+            if (isSlash) {
+                await message.editReply({ embeds: [errorEmbed] });
+            } else {
+                await message.reply({ embeds: [errorEmbed] });
+            }
         }
     }
 }); 

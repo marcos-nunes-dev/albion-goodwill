@@ -175,12 +175,12 @@ module.exports = new Command({
             if (!playerFound) {
                 try {
                     const ledgerResponse = await axios.get(
-                        `${apiEndpoint}/players/${encodeURIComponent(nickname)}/ledger`
+                        `${apiEndpoint}/api/players/${encodeURIComponent(nickname)}/events?skip=0`
                     );
                     
                     // Check if the response has events data
                     const { events } = ledgerResponse.data;
-                    if (ledgerResponse.status === 200 && Array.isArray(events)) {
+                    if (ledgerResponse.status === 200 && events.length > 0) {
                         // Even if events is empty, if we got a 200 and events array exists, the player exists
                         playerName = nickname;
                         playerFound = true;
