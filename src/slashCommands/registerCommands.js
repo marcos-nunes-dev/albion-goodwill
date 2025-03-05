@@ -282,6 +282,19 @@ const commands = [
 
     // Albion Commands
     new SlashCommandBuilder()
+        .setName('pingpvp')
+        .setDescription('Pings a role with a PVP event message using a composition template')
+        .addRoleOption(option =>
+            option.setName('role')
+                .setDescription('The role to ping for the PVP event')
+                .setRequired(true)
+        )
+        .addAttachmentOption(option =>
+            option.setName('template')
+                .setDescription('Text file containing the JSON composition template')
+                .setRequired(true)
+        ),
+    new SlashCommandBuilder()
         .setName('canplay')
         .setDescription('Check if members can play together based on MMR')
         .addStringOption(option =>
@@ -374,6 +387,25 @@ const commands = [
         .addStringOption(option =>
             option.setName('character')
                 .setDescription('Your Albion Online character name')
+                .setRequired(true)
+                .setAutocomplete(true)
+        ),
+    new SlashCommandBuilder()
+        .setName('playerstats')
+        .setDescription('Display detailed statistics for an Albion Online player')
+        .addStringOption(option =>
+            option.setName('region')
+                .setDescription('Player region')
+                .setRequired(true)
+                .addChoices(
+                    { name: 'America', value: 'america' },
+                    { name: 'Europe', value: 'europe' },
+                    { name: 'Asia', value: 'asia' }
+                )
+        )
+        .addStringOption(option =>
+            option.setName('character')
+                .setDescription('Albion Online character name')
                 .setRequired(true)
                 .setAutocomplete(true)
         ),

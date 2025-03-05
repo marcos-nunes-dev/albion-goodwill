@@ -24,6 +24,7 @@ class AutocompleteHandler {
                 case 'register':
                 case 'registerhim':
                 case 'apply':
+                case 'playerstats':
                     if (focusedOption.name === 'character') {
                         const region = interaction.options.getString('region');
                         if (region) {
