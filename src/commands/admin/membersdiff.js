@@ -44,9 +44,6 @@ module.exports = new Command({
                 return;
             }
 
-            // Fetch all guild members to ensure we have the complete list
-            await message.guild.members.fetch();
-
             // Get file attachment
             const attachment = isSlash ?
                 message.options.getAttachment('members_file') :
@@ -94,18 +91,19 @@ module.exports = new Command({
             });
 
             // Get registrations for role members
-            const roleMemberRegistrations = allGuildRegistrations.filter(reg => 
-                role.members.has(reg.userId)
-            );
+            const roleMemberRegistrations = allGuildRegistrations.filter(reg => {
+                const member = message.guild.members.cache.get(reg.userId);
+                return member && member.roles.cache.has(role.id);
+            });
 
             // Find members to remove (in role but not in file)
-            const membersToRemove = role.members.filter(member => {
+            const membersToRemove = message.guild.members.cache.filter(member => {
+                if (!member.roles.cache.has(role.id)) return false;
                 const playerReg = roleMemberRegistrations.find(reg => reg.userId === member.id);
                 return playerReg && !fileMembers.includes(playerReg.playerName);
             });
 
             // Find members without registration (in file but not registered to any role member)
-            const roleMemberIds = new Set([...role.members.keys()]);
             const registeredNames = new Set(allGuildRegistrations.map(reg => reg.playerName));
             const membersWithoutReg = fileMembers.filter(name => !registeredNames.has(name));
 
@@ -115,13 +113,13 @@ module.exports = new Command({
                 const isInFile = fileMembers.includes(reg.playerName);
                 
                 // Check if the user has the role
-                const hasRole = Array.from(role.members.keys()).includes(reg.userId);
+                const member = message.guild.members.cache.get(reg.userId);
+                const hasRole = member && member.roles.cache.has(role.id);
                 
                 console.log(`Player: ${reg.playerName}`);
                 console.log(`User ID: ${reg.userId}`);
                 console.log(`Is in file: ${isInFile}`);
                 console.log(`Has role: ${hasRole}`);
-                console.log(`Role members: ${Array.from(role.members.keys()).join(', ')}`);
                 console.log('---');
                 
                 // We want players who are in the file but don't have the role
