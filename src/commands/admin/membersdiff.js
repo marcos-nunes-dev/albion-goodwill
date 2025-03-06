@@ -108,13 +108,12 @@ module.exports = new Command({
 
             // Find members without role (registered but don't have the role)
             const membersWithoutRole = allGuildRegistrations.filter(reg => {
-                // Check if the player is in the file
+                // Check if the player is in the file (guild list)
                 const isInFile = fileMembers.includes(reg.playerName);
                 // Check if the user has the role
                 const hasRole = role.members.has(reg.userId);
-                // Check if the registration is for the current guild
-                const isInCurrentGuild = reg.guildId === message.guild.id;
-                return isInFile && !hasRole && isInCurrentGuild;
+                // We want players who are in the file but don't have the role
+                return isInFile && !hasRole;
             });
 
             // Setup pagination
