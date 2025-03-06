@@ -99,7 +99,12 @@ module.exports = new Command({
             });
 
             // Find members without registration (in file but not registered to any role member)
-            const registeredNames = new Set(registeredPlayers.map(reg => reg.playerName));
+            const roleMemberIds = new Set([...role.members.keys()]);
+            const registeredNames = new Set(
+                registeredPlayers
+                    .filter(reg => roleMemberIds.has(reg.userId))
+                    .map(reg => reg.playerName)
+            );
             const membersWithoutReg = fileMembers.filter(name => !registeredNames.has(name));
 
             // Find members without role (registered but don't have the role)
@@ -108,11 +113,13 @@ module.exports = new Command({
                     playerName: {
                         in: fileMembers
                     },
-                    NOT: {
-                        userId: {
-                            in: [...role.members.keys()]
-                        }
-                    }
+                    userId: {
+                        notIn: [...roleMemberIds]
+                    },
+                    guildId: message.guild.id
+                },
+                include: {
+                    user: true
                 }
             });
 
