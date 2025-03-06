@@ -109,11 +109,18 @@ module.exports = new Command({
             // Find members without role (registered but don't have the role)
             const membersWithoutRole = allGuildRegistrations.filter(reg => {
                 // Check if the player is in the file (guild list)
-                console.log("is in file:", fileMembers, reg.playerName);
                 const isInFile = fileMembers.includes(reg.playerName);
+                
                 // Check if the user has the role
-                console.log("has role:", role.members, reg.userId)
-                const hasRole = role.members.has(reg.userId);
+                const hasRole = Array.from(role.members.keys()).includes(reg.userId);
+                
+                console.log(`Player: ${reg.playerName}`);
+                console.log(`User ID: ${reg.userId}`);
+                console.log(`Is in file: ${isInFile}`);
+                console.log(`Has role: ${hasRole}`);
+                console.log(`Role members: ${Array.from(role.members.keys()).join(', ')}`);
+                console.log('---');
+                
                 // We want players who are in the file but don't have the role
                 return isInFile && !hasRole;
             });
