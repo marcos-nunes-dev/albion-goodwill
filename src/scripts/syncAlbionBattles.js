@@ -1,8 +1,9 @@
 const prisma = require('../config/prisma');
 const axios = require('axios');
 const { updateBattleLogChannelName } = require('../utils/battleStats');
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
 const FuzzySet = require('fuzzyset.js');
+const { getSharedClient } = require('../config/discordClient');
 
 // Helper function to add delay between API calls
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -89,7 +90,6 @@ async function notifyAdmin(client, results) {
 
 async function syncAlbionBattles(providedClient = null) {
     let client = providedClient;
-    let temporaryClient = null;
     const results = {
         guildsProcessed: 0,
         battlesFound: 0,
@@ -98,16 +98,9 @@ async function syncAlbionBattles(providedClient = null) {
     };
 
     try {
-        // If no client provided, create a temporary one for the cron job
+        // If no client provided, use the shared client
         if (!client) {
-            temporaryClient = new Client({
-                intents: [
-                    GatewayIntentBits.Guilds,
-                    GatewayIntentBits.GuildMessages
-                ]
-            });
-            await temporaryClient.login(process.env.DISCORD_TOKEN);
-            client = temporaryClient;
+            client = await getSharedClient();
         }
 
         console.log('Starting Albion battle sync process...');
@@ -370,11 +363,6 @@ async function syncAlbionBattles(providedClient = null) {
         console.error('Error in syncAlbionBattles:', error);
         results.errors++;
         await notifyAdmin(client, results);
-    } finally {
-        // Clean up temporary client if we created one
-        if (temporaryClient) {
-            temporaryClient.destroy();
-        }
     }
 }
 

@@ -2,7 +2,8 @@ const prisma = require('../config/prisma');
 const axios = require('axios');
 const FuzzySet = require('fuzzyset.js');
 const { updateBattleLogChannelName } = require('../utils/battleStats');
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
+const { getSharedClient } = require('../config/discordClient');
 
 // Helper function to add delay between API calls
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -105,7 +106,6 @@ async function notifyAdmin(client, results) {
 
 async function updateBattles(providedClient = null) {
     let client = providedClient;
-    let temporaryClient = null;
     const results = {
         processedCount: 0,
         guildsUpdated: 0,
@@ -113,16 +113,9 @@ async function updateBattles(providedClient = null) {
     };
 
     try {
-        // If no client provided, create a temporary one for the cron job
+        // If no client provided, use the shared client
         if (!client) {
-            temporaryClient = new Client({
-                intents: [
-                    GatewayIntentBits.Guilds,
-                    GatewayIntentBits.GuildMessages
-                ]
-            });
-            await temporaryClient.login(process.env.DISCORD_TOKEN);
-            client = temporaryClient;
+            client = await getSharedClient();
         }
 
         console.log('Starting battle update process...');
@@ -368,11 +361,6 @@ async function updateBattles(providedClient = null) {
         console.error('Error in updateBattles:', error);
         results.errors++;
         await notifyAdmin(client, results);
-    } finally {
-        // Clean up temporary client if we created one
-        if (temporaryClient) {
-            temporaryClient.destroy();
-        }
     }
 }
 
