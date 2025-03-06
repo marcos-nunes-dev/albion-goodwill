@@ -212,14 +212,29 @@ function updateEmbedWithFillQueue(embed, compositionState) {
     }
 
     // Collect all fill players
-    const fillQueue = new Map(); // Map of userId -> {weapon, character}
+    const fillQueue = new Map(); // Map of userId -> {weapon, character, experience}
     
+    // Add weapon-specific fill players
     for (const [name, w] of compositionState.weapons.entries()) {
         if (w.fillPlayers) {
             for (const userId of w.fillPlayers) {
                 fillQueue.set(userId, {
                     weapon: w.name,
-                    character: w.fillCharacters?.get(userId)
+                    character: w.fillCharacters?.get(userId),
+                    experience: null
+                });
+            }
+        }
+    }
+
+    // Add general fill queue players
+    if (compositionState.fillQueue) {
+        for (const [userId, data] of compositionState.fillQueue.entries()) {
+            if (!fillQueue.has(userId)) {
+                fillQueue.set(userId, {
+                    weapon: 'Any Role',
+                    character: data.character,
+                    experience: data.experience
                 });
             }
         }
@@ -229,7 +244,15 @@ function updateEmbedWithFillQueue(embed, compositionState) {
     if (fillQueue.size > 0) {
         let fillQueueText = '';
         for (const [userId, data] of fillQueue.entries()) {
-            fillQueueText += `• <@${userId}> (${data.weapon})${data.character ? ` - ${data.character}` : ''}\n`;
+            let playerText = `<@${userId}>`;
+            if (data.character) {
+                playerText += ` - ${data.character}`;
+            }
+            if (data.experience) {
+                playerText += ` |||| ${data.experience}`;
+            }
+            playerText += ` (${data.weapon})`;
+            fillQueueText += `• ${playerText}\n`;
         }
         embed.addFields({
             name: '👥 FILL QUEUE',
@@ -397,25 +420,46 @@ module.exports = new Command({
 
             // Validate required inputs
             if (!role) {
-                return interaction.reply({ 
-                    content: 'Please provide a valid role to ping!', 
-                    ephemeral: true 
-                });
+                if (!interaction.deferred) {
+                    return interaction.reply({ 
+                        content: 'Please provide a valid role to ping!', 
+                        ephemeral: true 
+                    });
+                } else {
+                    return interaction.editReply({ 
+                        content: 'Please provide a valid role to ping!', 
+                        ephemeral: true 
+                    });
+                }
             }
 
             if (!template && !jsonInput) {
-                return interaction.reply({
-                    content: 'Please provide either a text file or JSON input!',
-                    ephemeral: true
-                });
+                if (!interaction.deferred) {
+                    return interaction.reply({
+                        content: 'Please provide either a text file or JSON input!',
+                        ephemeral: true
+                    });
+                } else {
+                    return interaction.editReply({
+                        content: 'Please provide either a text file or JSON input!',
+                        ephemeral: true
+                    });
+                }
             }
 
             // Validate template file if provided
-            if (template && !template.contentType?.includes('text')) {
-                return interaction.reply({
-                    content: 'Please provide a valid text file for the template!',
-                    ephemeral: true
-                });
+            if (template && !template.contentType?.includes('json') && !template.contentType?.includes('text')) {
+                if (!interaction.deferred) {
+                    return interaction.reply({
+                        content: 'Please provide a valid JSON file for the template!',
+                        ephemeral: true
+                    });
+                } else {
+                    return interaction.editReply({
+                        content: 'Please provide a valid JSON file for the template!',
+                        ephemeral: true
+                    });
+                }
             }
 
             // If not already deferred (from items init)
@@ -520,7 +564,7 @@ module.exports = new Command({
                     // Add party header
                     embed.addFields({
                         name: `🎯 ${party.name.toUpperCase()}`,
-                        value: '━━━━━━━━━━━━━━━',
+                        value: ' ',
                         inline: false
                     });
 
@@ -553,16 +597,37 @@ module.exports = new Command({
                     if (index < composition.parties.length - 1) {
                         embed.addFields({
                             name: '\u200b',
-                            value: '━━━━━━━━━━━━━━━',
+                            value: ' ',
                             inline: false
                         });
                     }
+                });
+
+                // Add empty field before total composition
+                embed.addFields({
+                    name: '\u200b',
+                    value: ' ',
+                    inline: false
                 });
 
                 // Add total players field
                 embed.addFields({
                     name: '📊 TOTAL COMPOSITION',
                     value: `👥 **Total Players Required:** ${totalPlayersNeeded}`,
+                    inline: false
+                });
+
+                // Add empty field after total composition
+                embed.addFields({
+                    name: '\u200b',
+                    value: ' ',
+                    inline: false
+                });
+
+                // Add fill queue command field
+                embed.addFields({
+                    name: '👥 FILL QUEUE',
+                    value: 'Want to join as a fill player? Use:\n`gw fill`',
                     inline: false
                 });
 
@@ -582,6 +647,49 @@ module.exports = new Command({
                     autoArchiveDuration: THREAD_AUTO_ARCHIVE_DURATION,
                     reason: 'PvP Event Discussion Thread'
                 });
+
+                // Send tutorial message
+                const tutorialEmbed = new EmbedBuilder()
+                    .setTitle('📖 How to Use This Composition')
+                    .setColor(0x00FF00)
+                    .setDescription([
+                        'Welcome to the PvP composition thread! Here\'s how to use it:',
+                        '',
+                        '**1. Joining a Role**',
+                        '• Use `gw <weapon_name>` to join a role',
+                        '• Example: `gw broadsword` or `gw holy staff`',
+                        '• The weapon name must match exactly as shown in the composition',
+                        '',
+                        '**2. Experience Check**',
+                        '• The system will check your recent PvP experience with the weapon',
+                        '• If you have recent experience, you\'ll be added as a regular player',
+                        '• If you don\'t have recent experience, you\'ll be added as a fill player',
+                        '',
+                        '**3. Fill Queue**',
+                        '• Use `gw fill` to join the fill queue',
+                        '• Your weapon experience will be displayed in the fill queue',
+                        '• Format: @User - CharacterName |||| Weapon1 (100x), Weapon2 (50x) (Role)',
+                        '• You can be replaced by more experienced players if spots are needed',
+                        '',
+                        '**4. Cancelling Your Role**',
+                        '• Use `gw cancel` to remove yourself from your current role',
+                        '• You can then join a different role if needed',
+                        '',
+                        '**5. Admin Controls**',
+                        '• Admins can use `gw cancel @user` to remove other players',
+                        '',
+                        '**6. Free Roles**',
+                        '• Roles marked with 🔓 are free roles',
+                        '• These don\'t require experience checks',
+                        '• They can be filled even if the weapon is full',
+                        '',
+                        '**Need Help?**',
+                        '• Ask in this thread if you have questions',
+                        '• Make sure you\'re verified with `/register` before joining'
+                    ].join('\n'))
+                    .setFooter({ text: 'Good luck and have fun!' });
+
+                await thread.send({ embeds: [tutorialEmbed] });
 
                 // Store the composition state
                 activeCompositions.set(thread.id, compositionState);
@@ -610,40 +718,6 @@ module.exports = new Command({
                     try {
                         const content = message.content.substring(3).trim().toLowerCase();
                         
-                        // Handle status commands
-                        if (content.startsWith('status ')) {
-                            const statusCommand = content.substring(7).trim();
-                            const member = await message.guild.members.fetch(message.author.id);
-                            const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
-                            const isEventCreator = message.author.id === compositionState.createdBy;
-
-                            if (!isAdmin && !isEventCreator) {
-                                await message.reply({
-                                    content: 'Only administrators or the event creator can change the status.',
-                                    ephemeral: true
-                                });
-                                return;
-                            }
-
-                            switch (statusCommand) {
-                                case 'close':
-                                    await updateCompositionStatus(compositionState, COMPOSITION_STATUS.CLOSED, 'Composition is now closed');
-                                    await message.reply('Composition has been closed.');
-                                    break;
-                                case 'cancel':
-                                    await updateCompositionStatus(compositionState, COMPOSITION_STATUS.CANCELLED, 'Composition has been cancelled');
-                                    await message.reply('Composition has been cancelled.');
-                                    break;
-                                case 'open':
-                                    await updateCompositionStatus(compositionState, COMPOSITION_STATUS.OPEN, 'Composition is now open');
-                                    await message.reply('Composition has been reopened.');
-                                    break;
-                                default:
-                                    await message.reply('Invalid status command. Use: status [open|close|cancel]');
-                            }
-                            return;
-                        }
-
                         // Handle cancel command
                         if (content.startsWith('cancel')) {
                             const userId = message.author.id;
@@ -716,7 +790,7 @@ module.exports = new Command({
                             if (totalField !== -1) {
                                 updatedEmbed.spliceFields(totalField, 1, {
                                     name: '📊 TOTAL COMPOSITION',
-                                    value: `👥 **Total Players Required:** ${compositionState.remainingTotal}/${compositionState.totalRequired}`,
+                                    value: `**Total Players Required:** ${compositionState.remainingTotal}/${compositionState.totalRequired}`,
                                     inline: false
                                 });
                             }
@@ -737,6 +811,100 @@ module.exports = new Command({
                                 ephemeral: true
                             });
                             return;
+                        }
+
+                        // Handle fill queue command
+                        if (content === 'fill') {
+                            const userId = message.author.id;
+
+                            // Check if user is already in fill queue
+                            let isAlreadyFill = false;
+                            for (const [name, w] of compositionState.weapons.entries()) {
+                                if (w.fillPlayers?.has(userId)) {
+                                    isAlreadyFill = true;
+                                    break;
+                                }
+                            }
+
+                            if (isAlreadyFill) {
+                                await message.reply({
+                                    content: 'You are already in the fill queue!',
+                                    ephemeral: true
+                                });
+                                return;
+                            }
+
+                            // Check if user is verified
+                            const verifiedCharacter = await getVerifiedCharacter(message.author.id, message.guild.id);
+                            if (!verifiedCharacter) {
+                                await message.reply({
+                                    content: `You need to verify or register your Albion character first using the \`/verify\` or \`/register\` command.`,
+                                    ephemeral: true
+                                });
+                                return;
+                            }
+
+                            // Get user's weapon experience
+                            try {
+                                const experience = await checkWeaponExperience(verifiedCharacter, 'any');
+                                
+                                // Create weapon experience text for embed
+                                let weaponExperienceText = '';
+                                const allWeapons = new Set();
+                                
+                                // Add recent weapons
+                                if (experience.topRecentWeapons?.length > 0) {
+                                    experience.topRecentWeapons
+                                        .filter(w => w.weapon_name && w.weapon_name.trim() !== '')
+                                        .slice(0, 3)
+                                        .forEach(w => {
+                                            allWeapons.add(`${w.weapon_name} (${w.usages}x)`);
+                                        });
+                                }
+                                
+                                // Add all-time weapons
+                                if (experience.topAllTimeWeapons?.length > 0) {
+                                    experience.topAllTimeWeapons
+                                        .filter(w => w.weapon_name && w.weapon_name.trim() !== '')
+                                        .slice(0, 3)
+                                        .forEach(w => {
+                                            allWeapons.add(`${w.weapon_name} (${w.usages}x)`);
+                                        });
+                                }
+
+                                // Join all weapons with commas
+                                weaponExperienceText = Array.from(allWeapons).join(', ');
+
+                                // Add to fill queue with experience
+                                const fillQueue = compositionState.fillQueue || new Map();
+                                fillQueue.set(userId, {
+                                    character: verifiedCharacter,
+                                    experience: weaponExperienceText
+                                });
+                                compositionState.fillQueue = fillQueue;
+
+                                // Update the embed
+                                const updatedEmbed = new EmbedBuilder(embed.toJSON());
+                                updateEmbedWithFillQueue(updatedEmbed, compositionState);
+
+                                // Update the original message with the new embed
+                                await sentMessage.edit({ embeds: [updatedEmbed] });
+                                compositionState.embed = updatedEmbed;
+
+                                // Send confirmation message
+                                await message.reply({
+                                    content: 'You have been added to the fill queue! You will be considered for any role that needs fill players.',
+                                    ephemeral: true
+                                });
+                                return;
+                            } catch (error) {
+                                console.error('Error checking weapon experience:', error);
+                                await message.reply({
+                                    content: 'There was an error checking your weapon experience. Please try again.',
+                                    ephemeral: true
+                                });
+                                return;
+                            }
                         }
 
                         // Check if user has the required role
@@ -863,8 +1031,8 @@ module.exports = new Command({
                                 weapon.fillCharacters = new Map();
                             }
 
-                            // Check if weapon is full with regular players
-                            if (isWeaponFullWithRegulars(weapon)) {
+                            // Check if weapon is full with regular players (skip for free roles)
+                            if (!weapon.isFreeRole && isWeaponFullWithRegulars(weapon)) {
                                 await message.reply({
                                     content: `This weapon is full with regular players.`,
                                     ephemeral: true
@@ -872,8 +1040,8 @@ module.exports = new Command({
                                 return;
                             }
 
-                            // If weapon is full but has fill players, check experience
-                            if (weapon.participants.size >= weapon.required && !weapon.isFreeRole) {
+                            // If weapon is full but has fill players, check experience (skip for free roles)
+                            if (!weapon.isFreeRole && weapon.participants.size >= weapon.required) {
                                 try {
                                     experience = await checkWeaponExperience(verifiedCharacter, weapon.name);
                                     
@@ -890,10 +1058,38 @@ module.exports = new Command({
                                             
                                             // Send message to removed fill player
                                             try {
-                                                await message.channel.send({
-                                                    content: `<@${removedFillPlayer}> You have been moved to the fill queue as a more experienced player has joined.`,
-                                                    ephemeral: true
-                                                });
+                                                // Get removed player's experience
+                                                const removedPlayerCharacter = weapon.fillCharacters.get(removedFillPlayer);
+                                                if (removedPlayerCharacter) {
+                                                    const experience = await checkWeaponExperience(removedPlayerCharacter, 'any');
+                                                    
+                                                    // Create weapon experience message
+                                                    let experienceMessage = '';
+                                                    if (experience.topRecentWeapons?.length > 0 || experience.topAllTimeWeapons?.length > 0) {
+                                                        experienceMessage = '\n\n**Your Weapon Experience:**\n';
+                                                        
+                                                        // Add recent weapons (up to 3)
+                                                        if (experience.topRecentWeapons?.length > 0) {
+                                                            experienceMessage += '**Recent (30 days):**\n';
+                                                            experience.topRecentWeapons.slice(0, 3).forEach(w => {
+                                                                experienceMessage += `• ${w.weapon_name}: ${w.usages} uses\n`;
+                                                            });
+                                                        }
+                                                        
+                                                        // Add all-time weapons (up to 3)
+                                                        if (experience.topAllTimeWeapons?.length > 0) {
+                                                            experienceMessage += '**All-Time:**\n';
+                                                            experience.topAllTimeWeapons.slice(0, 3).forEach(w => {
+                                                                experienceMessage += `• ${w.weapon_name}: ${w.usages} uses\n`;
+                                                            });
+                                                        }
+                                                    }
+
+                                                    await message.channel.send({
+                                                        content: `<@${removedFillPlayer}> You have been moved to the fill queue as a more experienced player has joined.${experienceMessage}`,
+                                                        ephemeral: true
+                                                    });
+                                                }
                                             } catch (error) {
                                                 console.error('Error sending fill queue message:', error);
                                             }
@@ -921,12 +1117,13 @@ module.exports = new Command({
                             // Add player to weapon
                             weapon.participants.add(userId);
                             
-                            // Add to fill players if they don't have experience
+                            // Add to fill players if they don't have experience (skip for free roles)
                             if (!weapon.isFreeRole && experience && !experience.hasExperience) {
                                 weapon.fillPlayers.add(userId);
                                 weapon.fillCharacters.set(userId, verifiedCharacter);
                             }
 
+                            // Only decrease remaining count for non-free roles
                             if (!weapon.isFreeRole) {
                                 weapon.remaining--;
                                 compositionState.remainingTotal--;

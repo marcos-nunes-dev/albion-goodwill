@@ -291,7 +291,7 @@ const commands = [
         )
         .addAttachmentOption(option =>
             option.setName('template')
-                .setDescription('Text file containing the JSON composition template')
+                .setDescription('JSON file containing the composition template')
                 .setRequired(true)
         ),
     new SlashCommandBuilder()
