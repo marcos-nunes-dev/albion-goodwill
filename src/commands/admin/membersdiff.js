@@ -112,7 +112,7 @@ module.exports = new Command({
                 console.log("is in file:", fileMembers, reg.playerName);
                 const isInFile = fileMembers.includes(reg.playerName);
                 // Check if the user has the role
-                console.log("has role:", role.member, reg.userId)
+                console.log("has role:", role.members, reg.userId)
                 const hasRole = role.members.has(reg.userId);
                 // We want players who are in the file but don't have the role
                 return isInFile && !hasRole;
