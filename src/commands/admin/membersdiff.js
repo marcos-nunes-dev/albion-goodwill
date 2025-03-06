@@ -44,8 +44,8 @@ module.exports = new Command({
                 return;
             }
 
-            // Fetch all role members to ensure we have the complete list
-            await role.members.fetch();
+            // Fetch all guild members to ensure we have the complete list
+            await message.guild.members.fetch();
 
             // Get file attachment
             const attachment = isSlash ?
