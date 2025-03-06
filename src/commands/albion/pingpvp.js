@@ -678,6 +678,8 @@ module.exports = new Command({
                         '',
                         '**5. Admin Controls**',
                         '• Admins can use `gw cancel @user` to remove other players',
+                        '• Admins can use `gw <weapon_name> @user` to force-add players to specific weapons',
+                        '• Example: `gw wildfire staff @user` or `gw broadsword @user`',
                         '',
                         '**6. Free Roles**',
                         '• Roles marked with 🔓 are free roles',
@@ -719,6 +721,157 @@ module.exports = new Command({
                     try {
                         const content = message.content.substring(3).trim().toLowerCase();
                         
+                        // Handle admin force-add command
+                        if (content.includes('@')) {
+                            const member = await message.guild.members.fetch(message.author.id);
+                            const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+                            const isEventCreator = message.author.id === interaction.user.id;
+
+                            if (!isAdmin && !isEventCreator) {
+                                await message.reply({
+                                    content: 'Only administrators or event creator can use this command.',
+                                    ephemeral: true
+                                });
+                                return;
+                            }
+
+                            // Split the command into weapon name and user mention
+                            const parts = content.split(' ');
+                            const mentionedUser = message.mentions.users.first();
+
+                            if (!mentionedUser) {
+                                await message.reply({
+                                    content: 'Please mention a user to add to the weapon.',
+                                    ephemeral: true
+                                });
+                                return;
+                            }
+
+                            // Get weapon name by removing the mention from the content
+                            const weaponName = content.replace(`<@${mentionedUser.id}>`, '').trim().toLowerCase();
+
+                            const weapon = compositionState.weapons.get(weaponName);
+                            if (!weapon) {
+                                await message.reply({
+                                    content: 'Invalid weapon name. Please use one of the available weapons.',
+                                    ephemeral: true
+                                });
+                                return;
+                            }
+
+                            const userId = mentionedUser.id;
+
+                            // Check if user is already participating
+                            let userPreviousWeapon = null;
+                            for (const [name, w] of compositionState.weapons.entries()) {
+                                if (w.participants.has(userId)) {
+                                    userPreviousWeapon = name;
+                                    break;
+                                }
+                            }
+
+                            // Check if user is in fill queue
+                            const isInFillQueue = compositionState.fillQueue?.has(userId);
+                            if (isInFillQueue) {
+                                compositionState.fillQueue.delete(userId);
+                            }
+
+                            if (userPreviousWeapon) {
+                                // Remove from previous weapon
+                                const prevWeapon = compositionState.weapons.get(userPreviousWeapon);
+                                prevWeapon.participants.delete(userId);
+                                prevWeapon.remaining = Math.min(prevWeapon.required, prevWeapon.remaining + 1);
+                                
+                                // Remove from previous weapon's fill players if they were a fill
+                                if (prevWeapon.fillPlayers?.has(userId)) {
+                                    prevWeapon.fillPlayers.delete(userId);
+                                    prevWeapon.fillCharacters.delete(userId);
+                                }
+                            }
+
+                            // Add player to weapon
+                            weapon.participants.add(userId);
+                            
+                            // Only decrease remaining count for non-free roles
+                            if (!weapon.isFreeRole) {
+                                weapon.remaining--;
+                                compositionState.remainingTotal--;
+                            }
+
+                            // Update the embed
+                            const updatedEmbed = new EmbedBuilder(embed.toJSON());
+                            let fieldIndex = 0;
+                            let currentParty = null;
+                            let partyHeaderIndex = 0;
+
+                            // First, find all party header indices
+                            const partyHeaderIndices = [];
+                            updatedEmbed.data.fields.forEach((field, index) => {
+                                if (field.name.startsWith('🎯')) {
+                                    partyHeaderIndices.push(index);
+                                }
+                            });
+
+                            for (const [name, w] of compositionState.weapons.entries()) {
+                                // If this is a new party, find the next party header index
+                                if (currentParty !== w.partyName) {
+                                    currentParty = w.partyName;
+                                    partyHeaderIndex = partyHeaderIndices.find(index => 
+                                        updatedEmbed.data.fields[index].name === `🎯 ${w.partyName.toUpperCase()}`
+                                    );
+                                    fieldIndex = partyHeaderIndex + 1; // Start after the party header
+                                }
+
+                                const participantsList = Array.from(w.participants)
+                                    .map(id => {
+                                        const isFill = w.fillPlayers?.has(id);
+                                        return `<@${id}>${isFill ? ' (fill)' : ''}`;
+                                    })
+                                    .join(', ');
+                                
+                                const roleText = w.isFreeRole ? '🔓 Free Role' : '';
+                                updatedEmbed.spliceFields(fieldIndex, 1, {
+                                    name: `${w.position}. ${w.name}`,
+                                    value: `👥 **Required:** ${w.remaining}/${w.required}\n${roleText}${participantsList ? `\n${participantsList}` : ''}\n\`\`\`gw ${name}\`\`\``,
+                                    inline: true
+                                });
+                                fieldIndex++;
+                            }
+
+                            // Update total count
+                            const totalField = updatedEmbed.data.fields.findIndex(f => f.name === '📊 TOTAL COMPOSITION');
+                            if (totalField !== -1) {
+                                // Calculate actual remaining players
+                                let actualRemaining = compositionState.totalRequired;
+                                for (const [name, w] of compositionState.weapons.entries()) {
+                                    if (!w.isFreeRole) {
+                                        actualRemaining -= (w.required - w.remaining);
+                                    }
+                                }
+                                compositionState.remainingTotal = actualRemaining;
+
+                                updatedEmbed.spliceFields(totalField, 1, {
+                                    name: '📊 TOTAL COMPOSITION',
+                                    value: `👥 **Total Players Required:** ${actualRemaining}/${compositionState.totalRequired}`,
+                                    inline: false
+                                });
+                            }
+
+                            // Add fill queue section
+                            updateEmbedWithFillQueue(updatedEmbed, compositionState);
+
+                            // Update the original message with the new embed
+                            await sentMessage.edit({ embeds: [updatedEmbed] });
+                            compositionState.embed = updatedEmbed;
+
+                            // Send confirmation message
+                            await message.reply({
+                                content: `${mentionedUser} has been added to ${weapon.name} by an administrator.`,
+                                ephemeral: true
+                            });
+                            return;
+                        }
+
                         // Handle cancel command
                         if (content.startsWith('cancel')) {
                             const userId = message.author.id;
