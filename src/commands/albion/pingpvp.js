@@ -574,14 +574,15 @@ module.exports = new Command({
                         const roleText = weapon.free_role ? '🔓 Free Role' : '';
                         const weaponNameWithoutPrefix = weapon.type.replace("Elder's ", "");
                         
-                        // Store weapon info in state
+                        // Store weapon info in state with party name
                         compositionState.weapons.set(weaponNameWithoutPrefix.toLowerCase(), {
                             name: weapon.type,
                             required: weapon.players_required,
                             remaining: weapon.players_required,
                             participants: new Set(),
                             position: currentPosition,
-                            isFreeRole: weapon.free_role
+                            isFreeRole: weapon.free_role,
+                            partyName: party.name // Add party name to weapon state
                         });
 
                         embed.addFields({
@@ -767,8 +768,27 @@ module.exports = new Command({
                             // Update the embed
                             const updatedEmbed = new EmbedBuilder(embed.toJSON());
                             let fieldIndex = 0;
+                            let currentParty = null;
+                            let partyHeaderIndex = 0;
+
+                            // First, find all party header indices
+                            const partyHeaderIndices = [];
+                            updatedEmbed.data.fields.forEach((field, index) => {
+                                if (field.name.startsWith('🎯')) {
+                                    partyHeaderIndices.push(index);
+                                }
+                            });
 
                             for (const [name, w] of compositionState.weapons.entries()) {
+                                // If this is a new party, find the next party header index
+                                if (currentParty !== w.partyName) {
+                                    currentParty = w.partyName;
+                                    partyHeaderIndex = partyHeaderIndices.find(index => 
+                                        updatedEmbed.data.fields[index].name === `🎯 ${w.partyName.toUpperCase()}`
+                                    );
+                                    fieldIndex = partyHeaderIndex + 1; // Start after the party header
+                                }
+
                                 const participantsList = Array.from(w.participants)
                                     .map(id => {
                                         const isFill = w.fillPlayers?.has(id);
@@ -788,9 +808,18 @@ module.exports = new Command({
                             // Update total count
                             const totalField = updatedEmbed.data.fields.findIndex(f => f.name === '📊 TOTAL COMPOSITION');
                             if (totalField !== -1) {
+                                // Calculate actual remaining players
+                                let actualRemaining = compositionState.totalRequired;
+                                for (const [name, w] of compositionState.weapons.entries()) {
+                                    if (!w.isFreeRole) {
+                                        actualRemaining -= (w.required - w.remaining);
+                                    }
+                                }
+                                compositionState.remainingTotal = actualRemaining;
+
                                 updatedEmbed.spliceFields(totalField, 1, {
                                     name: '📊 TOTAL COMPOSITION',
-                                    value: `**Total Players Required:** ${compositionState.remainingTotal}/${compositionState.totalRequired}`,
+                                    value: `👥 **Total Players Required:** ${actualRemaining}/${compositionState.totalRequired}`,
                                     inline: false
                                 });
                             }
@@ -850,30 +879,53 @@ module.exports = new Command({
                                 
                                 // Create weapon experience text for embed
                                 let weaponExperienceText = '';
-                                const allWeapons = new Set();
+                                const allWeapons = new Map(); // Use Map to track unique weapons
                                 
-                                // Add recent weapons
+                                // Add recent weapons first (they take priority)
                                 if (experience.topRecentWeapons?.length > 0) {
                                     experience.topRecentWeapons
                                         .filter(w => w.weapon_name && w.weapon_name.trim() !== '')
                                         .slice(0, 3)
                                         .forEach(w => {
-                                            allWeapons.add(`${w.weapon_name} (${w.usages}x)`);
+                                            allWeapons.set(w.weapon_name.toLowerCase(), {
+                                                name: w.weapon_name,
+                                                usages: w.usages,
+                                                isRecent: true
+                                            });
                                         });
                                 }
                                 
-                                // Add all-time weapons
+                                // Add all-time weapons and combine usages if weapon exists
                                 if (experience.topAllTimeWeapons?.length > 0) {
                                     experience.topAllTimeWeapons
                                         .filter(w => w.weapon_name && w.weapon_name.trim() !== '')
                                         .slice(0, 3)
                                         .forEach(w => {
-                                            allWeapons.add(`${w.weapon_name} (${w.usages}x)`);
+                                            const existingWeapon = allWeapons.get(w.weapon_name.toLowerCase());
+                                            if (existingWeapon) {
+                                                // If weapon exists, use the all-time usages (total)
+                                                existingWeapon.usages = w.usages;
+                                                existingWeapon.isRecent = false;
+                                            } else {
+                                                // If weapon doesn't exist, add it
+                                                allWeapons.set(w.weapon_name.toLowerCase(), {
+                                                    name: w.weapon_name,
+                                                    usages: w.usages,
+                                                    isRecent: false
+                                                });
+                                            }
                                         });
                                 }
 
-                                // Join all weapons with commas
-                                weaponExperienceText = Array.from(allWeapons).join(', ');
+                                // Convert Map to array and sort by usages
+                                const sortedWeapons = Array.from(allWeapons.values())
+                                    .sort((a, b) => b.usages - a.usages)
+                                    .slice(0, 6); // Take top 6 weapons
+
+                                // Format the weapons text
+                                weaponExperienceText = sortedWeapons
+                                    .map(w => `${w.name} (${w.usages}x)`)
+                                    .join(', ');
 
                                 // Add to fill queue with experience
                                 const fillQueue = compositionState.fillQueue || new Map();
@@ -954,6 +1006,12 @@ module.exports = new Command({
                                 userPreviousWeapon = name;
                                 break;
                             }
+                        }
+
+                        // Check if user is in fill queue
+                        const isInFillQueue = compositionState.fillQueue?.has(userId);
+                        if (isInFillQueue) {
+                            compositionState.fillQueue.delete(userId);
                         }
 
                         if (userPreviousWeapon) {
@@ -1140,8 +1198,27 @@ module.exports = new Command({
                             // Update the embed
                             const updatedEmbed = new EmbedBuilder(embed.toJSON());
                             let fieldIndex = 0;
+                            let currentParty = null;
+                            let partyHeaderIndex = 0;
+
+                            // First, find all party header indices
+                            const partyHeaderIndices = [];
+                            updatedEmbed.data.fields.forEach((field, index) => {
+                                if (field.name.startsWith('🎯')) {
+                                    partyHeaderIndices.push(index);
+                                }
+                            });
 
                             for (const [name, w] of compositionState.weapons.entries()) {
+                                // If this is a new party, find the next party header index
+                                if (currentParty !== w.partyName) {
+                                    currentParty = w.partyName;
+                                    partyHeaderIndex = partyHeaderIndices.find(index => 
+                                        updatedEmbed.data.fields[index].name === `🎯 ${w.partyName.toUpperCase()}`
+                                    );
+                                    fieldIndex = partyHeaderIndex + 1; // Start after the party header
+                                }
+
                                 const participantsList = Array.from(w.participants)
                                     .map(id => {
                                         const isFill = w.fillPlayers?.has(id);
@@ -1161,9 +1238,18 @@ module.exports = new Command({
                             // Update total count
                             const totalField = updatedEmbed.data.fields.findIndex(f => f.name === '📊 TOTAL COMPOSITION');
                             if (totalField !== -1) {
+                                // Calculate actual remaining players
+                                let actualRemaining = compositionState.totalRequired;
+                                for (const [name, w] of compositionState.weapons.entries()) {
+                                    if (!w.isFreeRole) {
+                                        actualRemaining -= (w.required - w.remaining);
+                                    }
+                                }
+                                compositionState.remainingTotal = actualRemaining;
+
                                 updatedEmbed.spliceFields(totalField, 1, {
                                     name: '📊 TOTAL COMPOSITION',
-                                    value: `👥 **Total Players Required:** ${compositionState.remainingTotal}/${compositionState.totalRequired}`,
+                                    value: `👥 **Total Players Required:** ${actualRemaining}/${compositionState.totalRequired}`,
                                     inline: false
                                 });
                             }
@@ -1180,37 +1266,23 @@ module.exports = new Command({
                                 content: 'Composition updated!',
                                 ephemeral: true 
                             });
-                        } else {
-                            // If no spots available and not a free role
-                            await message.reply({
-                                content: `No spots available for ${weapon.name}`,
-                                ephemeral: true
-                            });
+                            return;
                         }
                     } catch (error) {
                         console.error('Error handling message:', error);
                         await message.reply({
-                            content: 'There was an error processing your request. Please try again.',
+                            content: 'There was an error handling your message. Please try again later.',
                             ephemeral: true
                         });
                     }
                 });
-
-                // Add error handler for the collector
-                collector.on('error', error => {
-                    console.error('Collector error:', error);
-                });
-
             } catch (error) {
-                console.error('Error in template processing:', error);
-                return interaction.editReply({
-                    content: `Error processing template: ${error.message}`,
-                    ephemeral: true
-                });
+                console.error('Error executing command:', error);
+                await handleError(error, interaction);
             }
-
         } catch (error) {
+            console.error('Error executing command:', error);
             await handleError(error, interaction);
         }
     }
-}); 
+});
