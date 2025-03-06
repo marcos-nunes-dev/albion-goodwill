@@ -44,6 +44,9 @@ module.exports = new Command({
                 return;
             }
 
+            // Fetch all role members to ensure we have the complete list
+            await role.members.fetch();
+
             // Get file attachment
             const attachment = isSlash ?
                 message.options.getAttachment('members_file') :
