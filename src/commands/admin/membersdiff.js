@@ -83,42 +83,33 @@ module.exports = new Command({
                 return;
             }
 
-            // Get all registered players for the role members
-            const registeredPlayers = await prisma.playerRegistration.findMany({
+            // Get all registered players for the guild
+            const allGuildRegistrations = await prisma.playerRegistration.findMany({
                 where: {
-                    userId: {
-                        in: [...role.members.keys()]
-                    }
+                    guildId: message.guild.id
                 }
             });
 
+            // Get registrations for role members
+            const roleMemberRegistrations = allGuildRegistrations.filter(reg => 
+                role.members.has(reg.userId)
+            );
+
             // Find members to remove (in role but not in file)
             const membersToRemove = role.members.filter(member => {
-                const playerReg = registeredPlayers.find(reg => reg.userId === member.id);
+                const playerReg = roleMemberRegistrations.find(reg => reg.userId === member.id);
                 return playerReg && !fileMembers.includes(playerReg.playerName);
             });
 
             // Find members without registration (in file but not registered to any role member)
             const roleMemberIds = new Set([...role.members.keys()]);
-            const registeredNames = new Set(
-                registeredPlayers
-                    .filter(reg => roleMemberIds.has(reg.userId))
-                    .map(reg => reg.playerName)
-            );
+            const registeredNames = new Set(allGuildRegistrations.map(reg => reg.playerName));
             const membersWithoutReg = fileMembers.filter(name => !registeredNames.has(name));
 
             // Find members without role (registered but don't have the role)
-            const membersWithoutRole = await prisma.playerRegistration.findMany({
-                where: {
-                    playerName: {
-                        in: fileMembers
-                    },
-                    guildId: message.guild.id,
-                    userId: {
-                        notIn: [...roleMemberIds]
-                    }
-                }
-            });
+            const membersWithoutRole = allGuildRegistrations.filter(reg => 
+                fileMembers.includes(reg.playerName) && !roleMemberIds.has(reg.userId)
+            );
 
             // Setup pagination
             const totalPagesRemove = Math.ceil(membersToRemove.size / ITEMS_PER_PAGE);
@@ -137,7 +128,7 @@ module.exports = new Command({
                         title = '🔄 Members to Remove';
                         color = 0xFF4444;
                         formatItem = (member) => {
-                            const reg = registeredPlayers.find(r => r.userId === member.id);
+                            const reg = roleMemberRegistrations.find(r => r.userId === member.id);
                             return `<@${member.id}> (${reg?.playerName || 'Unknown'})`;
                         };
                         break;
@@ -286,21 +277,21 @@ module.exports = new Command({
                                     try {
                                         if (currentList === 'remove') {
                                             const member = item;
-                                            const playerReg = registeredPlayers.find(reg => reg.userId === member.id);
+                                            const playerReg = roleMemberRegistrations.find(reg => reg.userId === member.id);
                                             if (playerReg) {
                                                 await member.roles.remove(role);
                                                 removed++;
                                             }
                                         } else if (currentList === 'unreg') {
                                             const name = item;
-                                            const playerReg = registeredPlayers.find(reg => reg.playerName === name);
+                                            const playerReg = allGuildRegistrations.find(reg => reg.playerName === name);
                                             if (playerReg) {
                                                 await member.roles.remove(role);
                                                 removed++;
                                             }
                                         } else if (currentList === 'norole') {
                                             const reg = item;
-                                            const playerReg = registeredPlayers.find(r => r.playerName === reg.playerName && r.userId === reg.userId);
+                                            const playerReg = allGuildRegistrations.find(r => r.playerName === reg.playerName && r.userId === reg.userId);
                                             if (playerReg) {
                                                 await member.roles.remove(role);
                                                 removed++;
