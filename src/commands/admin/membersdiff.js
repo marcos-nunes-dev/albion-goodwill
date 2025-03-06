@@ -113,15 +113,21 @@ module.exports = new Command({
                     playerName: {
                         in: fileMembers
                     },
-                    userId: {
-                        notIn: [...roleMemberIds]
-                    },
-                    guildId: message.guild.id
+                    guildId: message.guild.id,
+                    user: {
+                        guildMembers: {
+                            some: {
+                                guildId: message.guild.id
+                            }
+                        }
+                    }
                 },
                 include: {
                     user: true
                 }
-            });
+            }).then(registrations => 
+                registrations.filter(reg => !roleMemberIds.has(reg.userId))
+            );
 
             // Setup pagination
             const totalPagesRemove = Math.ceil(membersToRemove.size / ITEMS_PER_PAGE);
