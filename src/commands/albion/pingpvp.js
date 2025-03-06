@@ -582,12 +582,13 @@ module.exports = new Command({
                             participants: new Set(),
                             position: currentPosition,
                             isFreeRole: weapon.free_role,
-                            partyName: party.name // Add party name to weapon state
+                            partyName: party.name, // Add party name to weapon state
+                            description: weapon.description
                         });
 
                         embed.addFields({
                             name: `${currentPosition}. ${weapon.type}`,
-                            value: `👥 **Required:** ${weapon.players_required}\n${roleText}\n\`\`\`gw ${weaponNameWithoutPrefix}\`\`\``,
+                            value: `👥 **Required:** ${weapon.players_required}\n${roleText}${weapon.description ? `\n📝 **Build:** ${weapon.description}` : ''}\n\`\`\`gw ${weaponNameWithoutPrefix}\`\`\``,
                             inline: true
                         });
                         
@@ -832,7 +833,7 @@ module.exports = new Command({
                                 const roleText = w.isFreeRole ? '🔓 Free Role' : '';
                                 updatedEmbed.spliceFields(fieldIndex, 1, {
                                     name: `${w.position}. ${w.name}`,
-                                    value: `👥 **Required:** ${w.remaining}/${w.required}\n${roleText}${participantsList ? `\n${participantsList}` : ''}\n\`\`\`gw ${name}\`\`\``,
+                                    value: `👥 **Required:** ${w.remaining}/${w.required}\n${roleText}${w.description ? `\n📝 **Build:** ${w.description}` : ''}${participantsList ? `\n${participantsList}` : ''}\n\`\`\`gw ${name}\`\`\``,
                                     inline: true
                                 });
                                 fieldIndex++;
@@ -952,7 +953,7 @@ module.exports = new Command({
                                 const roleText = w.isFreeRole ? '🔓 Free Role' : '';
                                 updatedEmbed.spliceFields(fieldIndex, 1, {
                                     name: `${w.position}. ${w.name}`,
-                                    value: `👥 **Required:** ${w.remaining}/${w.required}\n${roleText}${participantsList ? `\n${participantsList}` : ''}\n\`\`\`gw ${name}\`\`\``,
+                                    value: `👥 **Required:** ${w.remaining}/${w.required}\n${roleText}${w.description ? `\n📝: ${w.description}` : ''}${participantsList ? `\n${participantsList}` : ''}\n\`\`\`gw ${name}\`\`\``,
                                     inline: true
                                 });
                                 fieldIndex++;
@@ -1382,7 +1383,7 @@ module.exports = new Command({
                                 const roleText = w.isFreeRole ? '🔓 Free Role' : '';
                                 updatedEmbed.spliceFields(fieldIndex, 1, {
                                     name: `${w.position}. ${w.name}`,
-                                    value: `👥 **Required:** ${w.remaining}/${w.required}\n${roleText}${participantsList ? `\n${participantsList}` : ''}\n\`\`\`gw ${name}\`\`\``,
+                                    value: `👥 **Required:** ${w.remaining}/${w.required}\n${roleText}${w.description ? `\n📝 **Build:** ${w.description}` : ''}${participantsList ? `\n${participantsList}` : ''}\n\`\`\`gw ${name}\`\`\``,
                                     inline: true
                                 });
                                 fieldIndex++;
