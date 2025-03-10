@@ -87,16 +87,24 @@ module.exports = new Command({
                 embed.setDescription(`⚠️ Found ${validMissingMembers.length} active users without activity records:\n\n${missingList}`);
             }
 
-            // Add active sessions info
+            // Add active sessions info in chunks
             if (activeSessions.length > 0) {
                 const sessionsList = activeSessions.map(session => 
                     `• ${session.username} (${session.userId})\n  Joined: ${session.joinTime.toLocaleString()}\n  AFK: ${session.isAfk ? 'Yes' : 'No'}\n  Muted/Deafened: ${session.isMutedOrDeafened ? 'Yes' : 'No'}`
-                ).join('\n\n');
+                );
 
-                embed.addFields({
-                    name: 'Active Voice Sessions',
-                    value: sessionsList
-                });
+                // Split sessions into chunks of 10
+                const chunkSize = 10;
+                for (let i = 0; i < sessionsList.length; i += chunkSize) {
+                    const chunk = sessionsList.slice(i, i + chunkSize);
+                    const chunkNumber = Math.floor(i / chunkSize) + 1;
+                    const totalChunks = Math.ceil(sessionsList.length / chunkSize);
+                    
+                    embed.addFields({
+                        name: `Active Voice Sessions (${chunkNumber}/${totalChunks})`,
+                        value: chunk.join('\n\n')
+                    });
+                }
             }
 
             if (isSlash) {

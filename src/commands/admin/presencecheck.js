@@ -196,7 +196,13 @@ module.exports = new Command({
                     if (!hasData) {
                         const joinedAt = member.joinedAt;
                         const joinDuration = formatDuration((Date.now() - joinedAt.getTime()) / 1000);
-                        return `${displayName}\n📅 Joined: ${joinedAt.toLocaleDateString()} (${joinDuration} ago)\n❌ No activity data recorded`;
+                        return [
+                            `**${displayName}**`,
+                            `📅 Joined: ${joinedAt.toLocaleDateString()} (${joinDuration} ago)`,
+                            `❌ No activity data recorded`,
+                            `• Last Seen: ${member.lastMessageAt ? member.lastMessageAt.toLocaleString() : 'Never'}`,
+                            `• Account Created: ${member.user.createdAt.toLocaleDateString()}`
+                        ].join('\n');
                     }
 
                     const totalTime = voiceTime + afkTime + mutedTime || 1;
@@ -206,13 +212,15 @@ module.exports = new Command({
                     const joinedAt = member.joinedAt;
                     const joinDuration = formatDuration((Date.now() - joinedAt.getTime()) / 1000);
 
-                    return `${displayName} ${isActive ? '✅' : '⚠️'}\n` +
-                           `📅 Joined: ${joinedAt.toLocaleDateString()} (${joinDuration} ago)\n` +
-                           `• Voice Time: \`${formatDuration(voiceTime)}\`\n` +
-                           `• AFK Time: \`${formatDuration(afkTime)}\`\n` +
-                           `• Muted Time: \`${formatDuration(mutedTime)}\`\n` +
-                           `• Activity: \`${percentage}%\` of top average\n` +
-                           `• Distribution: Active \`${activePercent}%\` | AFK \`${afkPercent}%\` | Muted \`${mutedPercent}%\``;
+                    return [
+                        `**${displayName}** ${isActive ? '✅' : '⚠️'}`,
+                        `📅 Joined: ${joinedAt.toLocaleDateString()} (${joinDuration} ago)`,
+                        `• Voice Time: \`${formatDuration(voiceTime)}\` (${activePercent}%)`,
+                        `• AFK Time: \`${formatDuration(afkTime)}\` (${afkPercent}%)`,
+                        `• Muted Time: \`${formatDuration(mutedTime)}\` (${mutedPercent}%)`,
+                        `• Activity: \`${percentage}%\` of top average`,
+                        `• Last Seen: ${member.lastMessageAt ? member.lastMessageAt.toLocaleString() : 'Never'}`
+                    ].join('\n');
                 }).join('\n\n');
 
                 const totalMembers = role.members.size;
@@ -226,12 +234,29 @@ module.exports = new Command({
                     (excludeRole ? ` • Excluded Role: ${excludeRole.name}` : '') +
                     ` • Page ${page + 1}/${totalPages}`;
 
-                return new EmbedBuilder()
+                const embed = new EmbedBuilder()
                     .setTitle(`${title} - ${role.name}`)
                     .setColor(0xFF4444)
                     .setDescription(description)
                     .setFooter({ text: footerText })
                     .setTimestamp();
+
+                // Add role information at the top
+                const roleInfo = [
+                    `**Role Information:**`,
+                    `• Total Members: ${role.members.size}`,
+                    `• Active Members: ${activeCount}`,
+                    `• Inactive Members: ${inactiveCount}`,
+                    `• Members Without Data: ${noDataCount}`,
+                    `• Required Active Time: ${formatDuration(minimumThreshold)}`,
+                    excludeRole ? `• Excluded Role: ${excludeRole.name}` : '',
+                    `• Period: ${period.charAt(0).toUpperCase() + period.slice(1)}`,
+                    `• Page ${page + 1}/${totalPages}`
+                ].filter(Boolean).join('\n');
+
+                embed.setDescription(roleInfo + '\n\n' + description);
+
+                return embed;
             };
 
             // Create navigation buttons
