@@ -90,9 +90,26 @@ module.exports = new Command({
             }
 
             // Get role members (excluding members with the exclude role)
-            const members = role.members.filter(member => 
-                !excludeRole || !member.roles.cache.has(excludeRole.id)
+            console.log(`Fetching members for role: ${role.name}`);
+            console.log(`Initial members count: ${role.members.size}`);
+            
+            // Fetch all members to ensure the collection is populated
+            await message.guild.members.fetch();
+            
+            // Get all members with the role
+            const allMembers = message.guild.members.cache.filter(member => 
+                member.roles.cache.has(role.id)
             );
+            
+            console.log(`Total members with role: ${allMembers.size}`);
+            
+            // Filter out members with exclude role if specified
+            const members = excludeRole ? 
+                allMembers.filter(member => !member.roles.cache.has(excludeRole.id)) :
+                allMembers;
+            
+            console.log(`Final members count after filtering: ${members.size}`);
+            console.log(`Exclude role: ${excludeRole ? excludeRole.name : 'None'}`);
 
             if (!members.size) {
                 const errorMessage = '❌ No members found with this role' + 
@@ -105,22 +122,36 @@ module.exports = new Command({
                 return;
             }
 
+            // Log member IDs for debugging
+            console.log('Member IDs:', Array.from(members.keys()).join(', '));
+
             // Get activity data for all members
+            console.log('Fetching activity data for members...');
             const activityData = await Promise.all(
                 Array.from(members.values()).map(async (member) => {
-                    const { data: stats } = await fetchActivityData({
-                        userId: member.id,
-                        guildId: message.guild.id,
-                        period,
-                        startDate
-                    });
-                    
-                    return {
-                        member,
-                        stats: stats || null // Ensure we have a null if no stats
-                    };
+                    try {
+                        const { data: stats } = await fetchActivityData({
+                            userId: member.id,
+                            guildId: message.guild.id,
+                            period,
+                            startDate
+                        });
+                        
+                        return {
+                            member,
+                            stats: stats || null // Ensure we have a null if no stats
+                        };
+                    } catch (error) {
+                        console.error(`Error fetching activity data for member ${member.id}:`, error);
+                        return {
+                            member,
+                            stats: null
+                        };
+                    }
                 })
             );
+
+            console.log(`Activity data fetched for ${activityData.length} members`);
 
             // Calculate threshold from top performers
             const validData = activityData.filter(data => data.stats !== null);
