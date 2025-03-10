@@ -44,6 +44,10 @@ const commands = [
                 .setRequired(false)
         ),
     new SlashCommandBuilder()
+        .setName('checkactivity')
+        .setDescription('Check for missing activity records in voice channels')
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+    new SlashCommandBuilder()
         .setName('competitors')
         .setDescription('Manage competitors to compare your guild against it')
         .addStringOption(option =>

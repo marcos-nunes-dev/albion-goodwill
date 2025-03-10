@@ -118,7 +118,8 @@ async function initializeBot() {
     });
 
     // Add periodic check (every 5 minutes)
-    setInterval(async () => {
+    let periodicCheckInterval;
+    async function runPeriodicCheck() {
       try {
         console.log('Running periodic voice state check...');
         
@@ -126,48 +127,65 @@ async function initializeBot() {
         await voiceTracker.cleanupStaleSessions();
 
         for (const guild of client.guilds.cache.values()) {
-          // Get all current voice states
-          const currentVoiceStates = guild.voiceStates.cache;
-          
-          // Get all active sessions from database
-          const activeSessions = await prisma.voiceSession.findMany({
-            where: { isActive: true }
-          });
+          try {
+            // Get all current voice states
+            const currentVoiceStates = guild.voiceStates.cache;
+            
+            // Get all active sessions from database
+            const activeSessions = await prisma.voiceSession.findMany({
+              where: { 
+                isActive: true,
+                guildId: guild.id // Add guildId filter for better performance
+              }
+            });
 
-          // Check for users who left but weren't tracked
-          for (const session of activeSessions) {
-            const voiceState = currentVoiceStates.get(session.userId);
-            if (!voiceState || !voiceState.channelId) {
-              console.log(`Found untracked leave for user ${session.username}`);
-              await voiceTracker.handleVoiceLeave(session.userId);
-            }
-          }
+            // Create a map of current voice states for faster lookup
+            const currentVoiceStateMap = new Map(
+              Array.from(currentVoiceStates.entries()).map(([userId, state]) => [userId, state])
+            );
 
-          // Check for new users who weren't tracked
-          for (const [userId, voiceState] of currentVoiceStates) {
-            if (voiceState.channelId) {
-              const hasActiveSession = await prisma.voiceSession.findFirst({
-                where: {
-                  userId,
-                  isActive: true
-                }
-              });
-
-              if (!hasActiveSession) {
-                console.log(`Found untracked join for user ${voiceState.member.user.username}`);
-                await voiceTracker.handleVoiceJoin(
-                  userId,
-                  voiceState.member.user.username,
-                  voiceState
-                );
+            // Check for users who left but weren't tracked
+            for (const session of activeSessions) {
+              const voiceState = currentVoiceStateMap.get(session.userId);
+              if (!voiceState || !voiceState.channelId) {
+                console.log(`Found untracked leave for user ${session.username} in guild ${guild.name}`);
+                await voiceTracker.handleVoiceLeave(session.userId);
               }
             }
+
+            // Check for new users who weren't tracked
+            for (const [userId, voiceState] of currentVoiceStates) {
+              if (voiceState.channelId) {
+                const hasActiveSession = activeSessions.some(session => 
+                  session.userId === userId && session.isActive
+                );
+
+                if (!hasActiveSession) {
+                  console.log(`Found untracked join for user ${voiceState.member.user.username} in guild ${guild.name}`);
+                  await voiceTracker.handleVoiceJoin(
+                    userId,
+                    voiceState.member.user.username,
+                    voiceState
+                  );
+                }
+              }
+            }
+          } catch (guildError) {
+            console.error(`Error processing guild ${guild.name}:`, guildError);
+            // Continue with next guild even if one fails
+            continue;
           }
         }
       } catch (error) {
         console.error('Error in periodic voice state check:', error);
+        // Restart the interval if it fails
+        clearInterval(periodicCheckInterval);
+        periodicCheckInterval = setInterval(runPeriodicCheck, 5 * 60 * 1000);
       }
-    }, 5 * 60 * 1000); // Run every 5 minutes
+    }
+
+    // Start the periodic check
+    periodicCheckInterval = setInterval(runPeriodicCheck, 5 * 60 * 1000);
 
     console.log('Bot permissions:', client.application?.flags.toArray());
 
@@ -202,30 +220,6 @@ async function initializeBot() {
         console.error(`Error initializing guild ${guild.name}:`, error);
       }
     });
-
-    // Add cleanup interval
-    setInterval(async () => {
-      try {
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        
-        const [deletedActivities, deletedSessions] = await Promise.all([
-          prisma.dailyActivity.deleteMany({
-            where: { date: { lt: thirtyDaysAgo } }
-          }),
-          prisma.voiceSession.deleteMany({
-            where: { joinTime: { lt: thirtyDaysAgo } }
-          })
-        ]);
-
-        logger.info('Cleanup completed', { 
-          deletedActivities: deletedActivities.count,
-          deletedSessions: deletedSessions.count
-        });
-      } catch (error) {
-        logger.error('Cleanup failed', { error: error.message });
-      }
-    }, 24 * 60 * 60 * 1000); // Run every 24 hours
 
     // Set up shutdown handlers
     async function shutdown(signal) {

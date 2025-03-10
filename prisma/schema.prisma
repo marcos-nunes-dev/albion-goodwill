@@ -3,22 +3,22 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
 model DailyActivity {
-  id                        String   @id @default(uuid())
-  userId                    String
-  guildId                   String
-  username                  String
-  date                      DateTime @db.Date
-  messageCount              Int      @default(0)
-  voiceTimeSeconds          Int      @default(0)
-  afkTimeSeconds            Int      @default(0)
-  mutedDeafenedTimeSeconds  Int      @default(0)
-  lastUpdated              DateTime @default(now()) @db.Timestamptz
+  id                       String   @id @default(uuid())
+  userId                   String
+  guildId                  String
+  username                 String
+  date                     DateTime @db.Date
+  messageCount             Int      @default(0)
+  voiceTimeSeconds         Int      @default(0)
+  afkTimeSeconds           Int      @default(0)
+  mutedDeafenedTimeSeconds Int      @default(0)
+  lastUpdated              DateTime @default(now()) @db.Timestamptz(6)
 
   @@unique([userId, guildId, date])
   @@index([date])
@@ -27,16 +27,16 @@ model DailyActivity {
 }
 
 model VoiceSession {
-  id                  String   @id @default(uuid())
-  userId              String
-  guildId             String
-  username            String
-  channelId           String
-  isAfk               Boolean  @default(false)
-  isMutedOrDeafened   Boolean  @default(false)
-  joinTime            DateTime @db.Timestamptz
-  lastStatusChange    DateTime @db.Timestamptz
-  isActive            Boolean  @default(true)
+  id                String   @id @default(uuid())
+  userId            String
+  guildId           String
+  username          String
+  channelId         String
+  isAfk             Boolean  @default(false)
+  isMutedOrDeafened Boolean  @default(false)
+  joinTime          DateTime @db.Timestamptz(6)
+  lastStatusChange  DateTime @db.Timestamptz(6)
+  isActive          Boolean  @default(true)
 
   @@index([isActive])
   @@index([userId, isActive])
@@ -44,57 +44,56 @@ model VoiceSession {
 }
 
 model GuildSettings {
-  id                    String   @id @default(uuid())
-  guildId              String   @unique
-  guildName            String
-  afkChannelId         String?
-  commandPrefix        String   @default("!albiongw")
-  albionGuildId        String?
-  competitorIds        String[] @default([])
-  tankRoleId           String?
-  supportRoleId        String?
-  healerRoleId         String?
-  dpsMeleeRoleId       String?
-  dpsRangedRoleId      String?
-  battlemountRoleId    String?
-  nicknameVerifiedId   String?
-  battlelogChannelId   String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-  syncAlbionNickname   Boolean  @default(false)
-  syncAlbionBattles    Boolean  @default(false)
+  id                 String   @id @default(uuid())
+  guildId            String   @unique
+  guildName          String
+  afkChannelId       String?
+  commandPrefix      String   @default("!albiongw")
+  albionGuildId      String?
+  competitorIds      String[] @default([])
+  tankRoleId         String?
+  supportRoleId      String?
+  healerRoleId       String?
+  dpsMeleeRoleId     String?
+  dpsRangedRoleId    String?
+  battlemountRoleId  String?
+  nicknameVerifiedId String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  syncAlbionNickname Boolean  @default(false)
+  battlelogChannelId String?
+  syncAlbionBattles  Boolean  @default(false)
 
   @@map("guild_settings")
 }
 
 model PlayerRegistration {
   id            String   @id @default(uuid())
-  userId        String   // Discord user ID
-  guildId       String   // Discord guild ID
-  albionGuildId String?  // Albion guild ID (optional)
+  userId        String
+  guildId       String
+  albionGuildId String?
   region        String
-  playerName    String
+  playerName    String   @unique
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  @@unique([playerName])  // Only one registration per Albion character name
   @@index([guildId])
   @@index([userId])
   @@map("player_registrations")
 }
 
 model BattleRegistration {
-  id            String   @id @default(uuid())
-  userId        String   // Discord user ID who registered the battle
-  guildId       String   // Discord guild ID where the battle was registered
-  battleTime    DateTime @db.Timestamptz // UTC time of the battle
-  enemyGuilds   String[] // Array of enemy guild names
-  isVictory     Boolean  // Whether the battle was a victory or defeat
-  kills         Int      // Amount of kills in the battle
-  deaths        Int      // Amount of deaths in the battle
-  battleUrl     String?  // Optional URL to the battle report
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id          String   @id @default(uuid())
+  userId      String
+  guildId     String
+  battleTime  DateTime @db.Timestamptz(6)
+  enemyGuilds String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deaths      Int
+  isVictory   Boolean
+  kills       Int
+  battleUrl   String?
 
   @@index([guildId])
   @@index([userId])
