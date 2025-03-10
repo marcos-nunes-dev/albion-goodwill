@@ -7,7 +7,9 @@ async function getSharedClient() {
         sharedClient = new Client({
             intents: [
                 GatewayIntentBits.Guilds,
-                GatewayIntentBits.GuildMessages
+                GatewayIntentBits.GuildMessages,
+                GatewayIntentBits.GuildMembers,
+                GatewayIntentBits.GuildPresences
             ]
         });
         await sharedClient.login(process.env.DISCORD_TOKEN);

@@ -93,8 +93,17 @@ module.exports = new Command({
             console.log(`Fetching members for role: ${role.name}`);
             console.log(`Initial members count: ${role.members.size}`);
             
-            // Fetch all members to ensure the collection is populated
-            await message.guild.members.fetch();
+            try {
+                // Fetch members with a longer timeout and chunk size
+                await message.guild.members.fetch({ 
+                    cache: true,
+                    force: true,
+                    timeout: 30000 // 30 seconds timeout
+                });
+            } catch (error) {
+                console.error('Error fetching members:', error);
+                // Continue with cached members if fetch fails
+            }
             
             // Get all members with the role
             const allMembers = message.guild.members.cache.filter(member => 
@@ -122,34 +131,54 @@ module.exports = new Command({
                 return;
             }
 
-            // Log member IDs for debugging
-            console.log('Member IDs:', Array.from(members.keys()).join(', '));
+            // Process members in chunks to avoid rate limits
+            const CHUNK_SIZE = 10;
+            const memberChunks = [];
+            const memberArray = Array.from(members.values());
+            
+            for (let i = 0; i < memberArray.length; i += CHUNK_SIZE) {
+                memberChunks.push(memberArray.slice(i, i + CHUNK_SIZE));
+            }
 
-            // Get activity data for all members
-            console.log('Fetching activity data for members...');
-            const activityData = await Promise.all(
-                Array.from(members.values()).map(async (member) => {
-                    try {
-                        const { data: stats } = await fetchActivityData({
-                            userId: member.id,
-                            guildId: message.guild.id,
-                            period,
-                            startDate
-                        });
-                        
-                        return {
-                            member,
-                            stats: stats || null // Ensure we have a null if no stats
-                        };
-                    } catch (error) {
-                        console.error(`Error fetching activity data for member ${member.id}:`, error);
-                        return {
-                            member,
-                            stats: null
-                        };
+            console.log(`Processing ${memberChunks.length} chunks of members`);
+
+            // Get activity data for all members in chunks
+            const activityData = [];
+            for (const chunk of memberChunks) {
+                try {
+                    const chunkData = await Promise.all(
+                        chunk.map(async (member) => {
+                            try {
+                                const { data: stats } = await fetchActivityData({
+                                    userId: member.id,
+                                    guildId: message.guild.id,
+                                    period,
+                                    startDate
+                                });
+                                
+                                return {
+                                    member,
+                                    stats: stats || null
+                                };
+                            } catch (error) {
+                                console.error(`Error fetching activity data for member ${member.id}:`, error);
+                                return {
+                                    member,
+                                    stats: null
+                                };
+                            }
+                        })
+                    );
+                    activityData.push(...chunkData);
+                    
+                    // Add a small delay between chunks to avoid rate limits
+                    if (memberChunks.indexOf(chunk) < memberChunks.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
                     }
-                })
-            );
+                } catch (error) {
+                    console.error('Error processing member chunk:', error);
+                }
+            }
 
             console.log(`Activity data fetched for ${activityData.length} members`);
 
