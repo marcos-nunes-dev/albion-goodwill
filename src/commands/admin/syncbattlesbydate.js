@@ -266,7 +266,7 @@ module.exports = new Command({
                                 // Create battle URL based on number of related battles
                                 const battleUrl = relatedBattles.length > 1 
                                     ? `https://albionbb.com/battles/multi?ids=${battleIds}`
-                                    : `https://albionbb.com/battle/${battle.albionId}`;
+                                    : `https://albionbb.com/battles/${battle.albionId}`;
 
                                 // Check if battle is already registered
                                 console.log('Checking if battle is already registered...');
