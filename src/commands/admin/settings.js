@@ -23,11 +23,10 @@ module.exports = new Command({
                         {
                             name: 'Available Commands',
                             value: [
-                                '`/setprefix prefix:<prefix>` - Set command prefix',
-                                '`/setguildname name:<name>` - Set Albion guild name',
-                                '`/setguildid id:<id>` - Set Albion guild ID',
-                                '`/setrole type:<type> role:@role` - Set role for class type',
-                                '`/setverifiedrole role:@role` - Set verified member role'
+                                '`/setup` - Configure all settings at once',
+                                '`/setupcreateroles` - Create required roles',
+                                '`/setsyncbattles enabled:<true/false>` - Enable/disable battle sync',
+                                '`/setguildid id:<id>` - Set Albion guild ID'
                             ].join('\n')
                         }
                     ])
@@ -42,48 +41,44 @@ module.exports = new Command({
             }
 
             const settingsEmbed = new EmbedBuilder()
-                .setTitle('ℹ️ Current Guild Settings')
+                .setTitle('⚙️ Current Guild Settings')
                 .addFields([
                     {
-                        name: 'General',
+                        name: 'Guild Configuration',
                         value: [
-                            `Command Prefix: \`${settings.commandPrefix || '!albiongw'}\``,
-                            `Guild Name: \`${settings.guildName || 'Not set'}\``,
-                            `Albion Guild ID: \`${settings.albionGuildId || 'Not set'}\``
-                        ].join('\n'),
-                        inline: false
+                            `Albion Guild ID: ${settings.albionGuildId ? `✅ \`${settings.albionGuildId}\`` : '❌ Not set'}`,
+                            `Guild Name: ${settings.guildName ? `✅ ${settings.guildName}` : '❌ Not set'}`,
+                            `Battle Sync: ${settings.syncAlbionBattles ? '✅ Enabled' : '❌ Disabled'}`,
+                            `Command Prefix: ${settings.commandPrefix || '!albiongw'}`
+                        ].join('\n')
                     },
                     {
-                        name: 'Roles',
+                        name: 'Role Configuration',
                         value: [
-                            `Tank: ${settings.tankRoleId ? `<@&${settings.tankRoleId}>` : '`Not set`'}`,
-                            `Support: ${settings.supportRoleId ? `<@&${settings.supportRoleId}>` : '`Not set`'}`,
-                            `Healer: ${settings.healerRoleId ? `<@&${settings.healerRoleId}>` : '`Not set`'}`,
-                            `DPS Melee: ${settings.dpsMeleeRoleId ? `<@&${settings.dpsMeleeRoleId}>` : '`Not set`'}`,
-                            `DPS Ranged: ${settings.dpsRangedRoleId ? `<@&${settings.dpsRangedRoleId}>` : '`Not set`'}`,
-                            `Battlemount: ${settings.battlemountRoleId ? `<@&${settings.battlemountRoleId}>` : '`Not set`'}`,
-                            `Verified: ${settings.nicknameVerifiedId ? `<@&${settings.nicknameVerifiedId}>` : '`Not set`'}`
-                        ].join('\n'),
-                        inline: false
+                            `Verified Role: ${settings.nicknameVerifiedId ? `✅ <@&${settings.nicknameVerifiedId}>` : '❌ Not set'}`,
+                            `Tank Role: ${settings.tankRoleId ? `✅ <@&${settings.tankRoleId}>` : '❌ Not set'}`,
+                            `Healer Role: ${settings.healerRoleId ? `✅ <@&${settings.healerRoleId}>` : '❌ Not set'}`,
+                            `Support Role: ${settings.supportRoleId ? `✅ <@&${settings.supportRoleId}>` : '❌ Not set'}`,
+                            `DPS Melee Role: ${settings.dpsMeleeRoleId ? `✅ <@&${settings.dpsMeleeRoleId}>` : '❌ Not set'}`,
+                            `DPS Ranged Role: ${settings.dpsRangedRoleId ? `✅ <@&${settings.dpsRangedRoleId}>` : '❌ Not set'}`,
+                            `Battlemount Role: ${settings.battlemountRoleId ? `✅ <@&${settings.battlemountRoleId}>` : '❌ Not set'}`
+                        ].join('\n')
                     },
                     {
-                        name: 'Competitor Guilds',
-                        value: settings.competitorIds?.length > 0 
-                            ? settings.competitorIds.map((id, index) => `${index + 1}. \`${id}\``).join('\n')
-                            : '`No competitor guilds set`',
-                        inline: false
+                        name: 'Channel Configuration',
+                        value: [
+                            `Battle Log Channel: ${settings.battlelogChannelId ? `✅ <#${settings.battlelogChannelId}>` : '❌ Not set'}`
+                        ].join('\n')
                     },
                     {
                         name: 'Available Commands',
                         value: [
-                            '`/setprefix prefix:<prefix>` - Set command prefix',
-                            '`/setguildname name:<name>` - Set Albion guild name',
+                            '`/setup` - Configure all settings at once',
+                            '`/setupcreateroles` - Create required roles',
+                            '`/setsyncbattles enabled:<true/false>` - Enable/disable battle sync',
                             '`/setguildid id:<id>` - Set Albion guild ID',
-                            '`/setrole type:<type> role:@role` - Set role for class type',
-                            '`/setverifiedrole role:@role` - Set verified member role',
-                            '`/competitors add/remove/list` - Manage competitor guilds'
-                        ].join('\n'),
-                        inline: false
+                            '`/setbattlelogchannel channel:#channel` - Set battle log channel'
+                        ].join('\n')
                     }
                 ])
                 .setColor(Colors.Blue)
@@ -96,20 +91,12 @@ module.exports = new Command({
                 embeds: [settingsEmbed],
                 ephemeral: isSlash
             });
-        } catch (error) {
-            console.error('Error showing settings:', error);
-            const errorEmbed = new EmbedBuilder()
-                .setTitle('❌ Error')
-                .setDescription('An error occurred while trying to fetch the settings.')
-                .setColor(Colors.Red)
-                .setTimestamp()
-                .setFooter({
-                    text: `Attempted by ${isSlash ? message.user.tag : message.author.tag}`
-                });
 
+        } catch (error) {
+            console.error('Error in settings command:', error);
             await message.reply({
-                embeds: [errorEmbed],
-                ephemeral: isSlash
+                content: 'An error occurred while fetching settings.',
+                ephemeral: true
             });
         }
     }
