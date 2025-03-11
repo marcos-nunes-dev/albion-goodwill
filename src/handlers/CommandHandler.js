@@ -402,8 +402,11 @@ class CommandHandler {
         case 'battleruncron':
           await this.handleBattleRunCron(interaction);
           break;
-        case 'syncbattlesbydate':
-          await this.handleSyncBattlesByDate(interaction);
+        case 'registerhim':
+          await this.handleRegisterHim(interaction);
+          break;
+        case 'pingpvp':
+          await this.handlePingPvP(interaction);
           break;
         default:
           const command = this.commands.get(commandName) ||
@@ -476,22 +479,6 @@ class CommandHandler {
       } else {
         await interaction.reply({ content: `❌ ${errorMessage}`, ephemeral: true });
       }
-    }
-  }
-
-  async handleSyncBattlesByDate(interaction) {
-    await interaction.deferReply();
-
-    try {
-      const targetDate = interaction.options.getString('date');
-      const syncAlbionBattlesByDate = require('../scripts/syncAlbionBattlesByDate');
-
-      await interaction.editReply(`🔄 Starting battle sync process for date: ${targetDate}...`);
-      await syncAlbionBattlesByDate(this.client, targetDate, interaction.guildId);
-      await interaction.editReply(`✅ Battle sync process completed for date: ${targetDate}. Check the battle log channel for details.`);
-    } catch (error) {
-      console.error('Error in handleSyncBattlesByDate:', error);
-      await interaction.editReply(`❌ Error: ${error.message}`);
     }
   }
 

@@ -82,14 +82,6 @@ const commands = [
                 .setRequired(true)
         ),
     new SlashCommandBuilder()
-        .setName('setprefix')
-        .setDescription('Set the bot command prefix')
-        .addStringOption(option =>
-            option.setName('prefix')
-                .setDescription('The new command prefix (must start with: ! $ % & * # @ ? .)')
-                .setRequired(true)
-        ),
-    new SlashCommandBuilder()
         .setName('settings')
         .setDescription('View current guild settings'),
     new SlashCommandBuilder()
@@ -98,43 +90,6 @@ const commands = [
         .addRoleOption(option =>
             option.setName('role')
                 .setDescription('The Discord role to assign to verified players')
-                .setRequired(true)
-        ),
-    new SlashCommandBuilder()
-        .setName('setrole')
-        .setDescription('Set a role for a specific Albion Online class')
-        .addStringOption(option =>
-            option.setName('type')
-                .setDescription('The role type to set')
-                .setRequired(true)
-                .addChoices(
-                    { name: 'Tank', value: 'tank' },
-                    { name: 'Support', value: 'support' },
-                    { name: 'Healer', value: 'healer' },
-                    { name: 'Melee DPS', value: 'melee' },
-                    { name: 'Ranged DPS', value: 'ranged' },
-                    { name: 'Battlemount', value: 'mount' }
-                )
-        )
-        .addRoleOption(option =>
-            option.setName('role')
-                .setDescription('The Discord role to assign')
-                .setRequired(true)
-        ),
-    new SlashCommandBuilder()
-        .setName('setguildname')
-        .setDescription('Set the Albion guild name')
-        .addStringOption(option =>
-            option.setName('name')
-                .setDescription('The Albion guild name to set')
-                .setRequired(true)
-        ),
-    new SlashCommandBuilder()
-        .setName('setguildid')
-        .setDescription('Set the Albion guild ID')
-        .addStringOption(option =>
-            option.setName('id')
-                .setDescription('The Albion guild ID to set')
                 .setRequired(true)
         ),
     new SlashCommandBuilder()
@@ -192,88 +147,6 @@ const commands = [
                 .setRequired(true)
                 .setAutocomplete(true)
         ),
-    new SlashCommandBuilder()
-        .setName('battleregister')
-        .setDescription('Register a battle against enemy guilds')
-        .addStringOption(option =>
-            option.setName('enemies')
-                .setDescription('Enemy guild names (comma-separated)')
-                .setRequired(true)
-        )
-        .addBooleanOption(option =>
-            option.setName('victory')
-                .setDescription('Was the battle a victory?')
-                .setRequired(true)
-        )
-        .addStringOption(option =>
-            option.setName('date')
-                .setDescription('Which day was the battle?')
-                .setRequired(true)
-                .addChoices(
-                    { name: 'Today', value: 'today' },
-                    { name: 'Yesterday', value: 'yesterday' },
-                    { name: '2 days ago', value: '2days' },
-                    { name: '3 days ago', value: '3days' },
-                    { name: 'Custom (YYYY-MM-DD)', value: 'custom' }
-                )
-        )
-        .addStringOption(option =>
-            option.setName('time')
-                .setDescription('What time was the battle? (UTC)')
-                .setRequired(true)
-                .addChoices(
-                    { name: '00:00 UTC', value: '00:00' },
-                    { name: '01:00 UTC', value: '01:00' },
-                    { name: '02:00 UTC', value: '02:00' },
-                    { name: '03:00 UTC', value: '03:00' },
-                    { name: '04:00 UTC', value: '04:00' },
-                    { name: '05:00 UTC', value: '05:00' },
-                    { name: '06:00 UTC', value: '06:00' },
-                    { name: '07:00 UTC', value: '07:00' },
-                    { name: '08:00 UTC', value: '08:00' },
-                    { name: '09:00 UTC', value: '09:00' },
-                    { name: '10:00 UTC', value: '10:00' },
-                    { name: '11:00 UTC', value: '11:00' },
-                    { name: '12:00 UTC', value: '12:00' },
-                    { name: '13:00 UTC', value: '13:00' },
-                    { name: '14:00 UTC', value: '14:00' },
-                    { name: '15:00 UTC', value: '15:00' },
-                    { name: '16:00 UTC', value: '16:00' },
-                    { name: '17:00 UTC', value: '17:00' },
-                    { name: '18:00 UTC', value: '18:00' },
-                    { name: '19:00 UTC', value: '19:00' },
-                    { name: '20:00 UTC', value: '20:00' },
-                    { name: '21:00 UTC', value: '21:00' },
-                    { name: '22:00 UTC', value: '22:00' },
-                    { name: '23:00 UTC', value: '23:00' }
-                )
-        )
-        .addIntegerOption(option =>
-            option.setName('kills')
-                .setDescription('Total number of kills in the battle')
-                .setRequired(false)
-                .setMinValue(0)
-        )
-        .addIntegerOption(option =>
-            option.setName('deaths')
-                .setDescription('Total number of deaths in the battle')
-                .setRequired(false)
-                .setMinValue(0)
-        )
-        .addStringOption(option =>
-            option.setName('custom_date')
-                .setDescription('If you selected Custom Date, enter the date (YYYY-MM-DD)')
-                .setRequired(false)
-        )
-        .addStringOption(option =>
-            option.setName('url')
-                .setDescription('URL to the battle report')
-                .setRequired(false)
-        ),
-    new SlashCommandBuilder()
-        .setName('battleruncron')
-        .setDescription('Manually trigger battle updates for pending registrations')
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     new SlashCommandBuilder()
         .setName('syncbattlesbydate')
         .setDescription('Sync battles from Albion API for a specific date')

@@ -7,12 +7,11 @@ const { formatDuration } = require('./utils/timeUtils');
 const CommandHandler = require('./handlers/CommandHandler');
 const AutocompleteHandler = require('./handlers/AutocompleteHandler');
 const GuildManager = require('./services/GuildManager');
+const BattleSyncService = require('./services/BattleSyncService');
 const { registerSlashCommands } = require('./slashCommands/registerCommands');
 const logger = require('./utils/logger');
 const { getSharedClient } = require('./config/discordClient');
-
-// Import cron jobs
-require('./cron');
+const cron = require('node-cron');
 
 console.log('Starting bot...');
 console.log('Checking required environment variables...');
@@ -42,8 +41,9 @@ async function initializeBot() {
     const client = await getSharedClient();
     logger.info('Shared Discord client initialized');
 
-    // Initialize autocomplete handler with client
+    // Initialize services
     const autocompleteHandler = new AutocompleteHandler(client);
+    const battleSyncService = new BattleSyncService(client);
 
     // Set up event handlers
     client.once('ready', async () => {
@@ -71,6 +71,22 @@ async function initializeBot() {
           }
         }
         console.log(`Initialized ${client.guilds.cache.size} servers`);
+
+        // Set up hourly cron job for battle sync
+        cron.schedule('0 * * * *', async () => {
+          try {
+            logger.info('Starting hourly battle sync...');
+            const results = await battleSyncService.syncRecentBattles();
+            logger.info('Battle sync completed', {
+              guildsProcessed: results.guildsProcessed,
+              battlesFound: results.battlesFound,
+              battlesRegistered: results.battlesRegistered,
+              errors: results.errors
+            });
+          } catch (error) {
+            logger.error('Error in hourly battle sync:', error);
+          }
+        });
 
         // Start server after initialization
         if (!serverStarted) {
