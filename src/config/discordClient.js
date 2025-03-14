@@ -9,7 +9,8 @@ async function getSharedClient() {
                 GatewayIntentBits.Guilds,
                 GatewayIntentBits.GuildMessages,
                 GatewayIntentBits.GuildMembers,
-                GatewayIntentBits.GuildPresences
+                GatewayIntentBits.GuildPresences,
+                GatewayIntentBits.MessageContent
             ]
         });
         await sharedClient.login(process.env.DISCORD_TOKEN);

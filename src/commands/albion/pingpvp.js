@@ -26,11 +26,18 @@ const COMPOSITION_STATUS = {
     CANCELLED: 'cancelled'
 };
 
-/**
- * Checks if a request should be rate limited
- * @param {string} playerName - The player name making the request
- * @returns {boolean} True if request should be rate limited
- */
+function cleanupRateLimitData() {
+    const now = Date.now();
+    for (const [playerName, timestamps] of requestTimestamps.entries()) {
+        const recentTimestamps = timestamps.filter(timestamp => now - timestamp < RATE_LIMIT_WINDOW);
+        if (recentTimestamps.length === 0) {
+            requestTimestamps.delete(playerName);
+        } else {
+            requestTimestamps.set(playerName, recentTimestamps);
+        }
+    }
+}
+
 function isRateLimited(playerName) {
     const now = Date.now();
     const timestamps = requestTimestamps.get(playerName) || [];
@@ -44,6 +51,12 @@ function isRateLimited(playerName) {
     
     recentTimestamps.push(now);
     requestTimestamps.set(playerName, recentTimestamps);
+    
+    // Cleanup old data periodically
+    if (Math.random() < 0.1) { // 10% chance to cleanup on each request
+        cleanupRateLimitData();
+    }
+    
     return false;
 }
 
@@ -55,23 +68,27 @@ function isRateLimited(playerName) {
  */
 async function getVerifiedCharacter(discordId, guildId) {
     try {
+        if (!discordId || !guildId) {
+            console.warn('Missing required parameters for verification check');
+            return null;
+        }
+
         console.log('Checking verification for Discord ID:', discordId, 'in Guild:', guildId);
         
-        // Try to find a user with this discord_id in this guild
         const user = await prisma.playerRegistration.findFirst({
             where: {
                 userId: discordId,
                 guildId: guildId
+            },
+            select: {
+                playerName: true
             }
+        }).catch(error => {
+            console.error('Prisma query error:', error);
+            return null;
         });
 
-        console.log('Found user:', user);
-        
-        if (user && user.playerName) {
-            return user.playerName;
-        }
-
-        return null;
+        return user?.playerName || null;
     } catch (error) {
         console.error('Error fetching verified character:', error);
         return null;
@@ -98,18 +115,34 @@ async function fetchPlayerWeaponStats(playerName, lookbackDays = LOOKBACK_DAYS) 
             return [];
         }
 
-        const response = await fetch(`https://murderledger.albiononline2d.com/api/players/${playerName}/stats/weapons${lookbackDays ? `?lookback_days=${lookbackDays}` : ''}`);
+        const response = await fetch(`https://murderledger.albiononline2d.com/api/players/${playerName}/stats/weapons${lookbackDays ? `?lookback_days=${lookbackDays}` : ''}`, {
+            timeout: 5000 // Add timeout
+        });
+        
         if (!response.ok) {
             if (response.status === 429) {
                 console.warn(`Rate limit hit from API for player: ${playerName}`);
                 return [];
             }
+            if (response.status === 404) {
+                console.warn(`Player not found: ${playerName}`);
+                return [];
+            }
             throw new Error(`HTTP error! status: ${response.status}`);
         }
+
+        // Add validation for the response data
         const data = await response.json();
+        if (!data || typeof data !== 'object') {
+            throw new Error('Invalid response data format');
+        }
+
         const stats = data.weapons || [];
-        
-        // Cache the results for 5 minutes
+        if (!Array.isArray(stats)) {
+            throw new Error('Invalid weapons data format');
+        }
+
+        // Cache the results
         weaponStatsCache.set(cacheKey, stats);
         setTimeout(() => weaponStatsCache.delete(cacheKey), 5 * 60 * 1000);
         
@@ -398,6 +431,74 @@ async function updateCompositionStatus(compositionState, newStatus, reason = '')
     await compositionState.originalMessage.edit({ embeds: [embed] });
 }
 
+/**
+ * Updates weapon state safely
+ * @param {Object} weapon - The weapon object to update
+ * @param {string} userId - The user ID
+ * @param {string} action - The action to perform ('add' or 'remove')
+ * @returns {Object} Updated weapon object
+ */
+function updateWeaponState(weapon, userId, action) {
+    if (!weapon || typeof weapon !== 'object') {
+        throw new Error('Invalid weapon object');
+    }
+
+    if (!userId || typeof userId !== 'string') {
+        throw new Error('Invalid user ID');
+    }
+
+    // Initialize required properties if they don't exist
+    weapon.participants = weapon.participants || new Set();
+    weapon.fillPlayers = weapon.fillPlayers || new Set();
+    weapon.fillCharacters = weapon.fillCharacters || new Map();
+    weapon.remaining = typeof weapon.remaining === 'number' ? weapon.remaining : weapon.required;
+
+    switch (action) {
+        case 'add':
+            weapon.participants.add(userId);
+            if (!weapon.isFreeRole) {
+                weapon.remaining = Math.max(0, weapon.remaining - 1);
+            }
+            break;
+        case 'remove':
+            weapon.participants.delete(userId);
+            weapon.fillPlayers.delete(userId);
+            weapon.fillCharacters.delete(userId);
+            if (!weapon.isFreeRole) {
+                weapon.remaining = Math.min(weapon.required, weapon.remaining + 1);
+            }
+            break;
+        default:
+            throw new Error('Invalid action');
+    }
+
+    return weapon;
+}
+
+/**
+ * Formats a weapon name to be more concise
+ * @param {string} weaponName - The full weapon name
+ * @returns {string} Formatted weapon name
+ */
+function formatWeaponName(weaponName) {
+    // Remove "Elder's" prefix
+    let name = weaponName.replace("Elder's ", "");
+    
+    // Remove "Staff" suffix
+    name = name.replace(" Staff", "");
+    
+    // Handle two-word weapons
+    const words = name.split(' ');
+    if (words.length === 2) {
+        // Abbreviate first word if it's longer than 4 characters
+        if (words[0].length > 4) {
+            return `${words[0][0]}. ${words[1]}`;
+        }
+    }
+    
+    return name;
+}
+
 module.exports = new Command({
     name: 'pingpvp',
     description: 'Pings a role with a PVP event message using a composition template',
@@ -572,23 +673,23 @@ module.exports = new Command({
                     party.weapons.forEach(weapon => {
                         partyTotal += weapon.players_required;
                         const roleText = weapon.free_role ? '🔓 Free Role' : '';
-                        const weaponNameWithoutPrefix = weapon.type.replace("Elder's ", "");
+                        const formattedWeaponName = formatWeaponName(weapon.type);
                         
                         // Store weapon info in state with party name
-                        compositionState.weapons.set(weaponNameWithoutPrefix.toLowerCase(), {
+                        compositionState.weapons.set(formattedWeaponName.toLowerCase(), {
                             name: weapon.type,
                             required: weapon.players_required,
                             remaining: weapon.players_required,
                             participants: new Set(),
                             position: currentPosition,
                             isFreeRole: weapon.free_role,
-                            partyName: party.name, // Add party name to weapon state
+                            partyName: party.name,
                             description: weapon.description
                         });
 
                         embed.addFields({
-                            name: `${weapon.type} 👥x${weapon.players_required}`,
-                            value: `\`\`\`gw ${weaponNameWithoutPrefix.toLowerCase()}\`\`\``,
+                            name: `${formattedWeaponName} 👥x${weapon.players_required}`,
+                            value: `\`\`\`gw ${formattedWeaponName.toLowerCase()}\`\`\``,
                             inline: false
                         });
                         
@@ -707,21 +808,116 @@ module.exports = new Command({
 
                 // Add thread message collector with timeout
                 const collector = thread.createMessageCollector({
-                    filter: m => m.content.startsWith('gw '),
+                    filter: (m) => {
+                        // More verbose debug logging
+                        console.log('Raw message event:', {
+                            content: m.content,
+                            cleanContent: m.cleanContent,
+                            type: m.type,
+                            system: m.system,
+                            author: {
+                                tag: m.author.tag,
+                                bot: m.author.bot,
+                                id: m.author.id
+                            },
+                            channel: {
+                                id: m.channel.id,
+                                type: m.channel.type,
+                                name: m.channel.name
+                            }
+                        });
+
+                        // Basic validation
+                        if (!m.content || typeof m.content !== 'string') {
+                            console.log('Message content invalid or empty');
+                            return false;
+                        }
+
+                        const isValidMessage = m.content.toLowerCase().trim().startsWith('gw ') && 
+                                            m.channel.id === thread.id && 
+                                            !m.author.bot;
+
+                        console.log('Message filter result:', {
+                            content: m.content,
+                            isValid: isValidMessage,
+                            checks: {
+                                startsWithGw: m.content.toLowerCase().trim().startsWith('gw '),
+                                correctChannel: m.channel.id === thread.id,
+                                notBot: !m.author.bot
+                            }
+                        });
+
+                        return isValidMessage;
+                    },
                     time: 24 * 60 * 60 * 1000 // 24 hours
                 });
 
+                // Log when collector is created
+                console.log('Message collector created for thread:', {
+                    threadId: thread.id,
+                    threadName: thread.name,
+                    guildId: thread.guildId,
+                    channelType: thread.type,
+                    parentChannelId: thread.parentId
+                });
+
+                // Add collector state check every minute
+                const collectorStateCheck = setInterval(() => {
+                    console.log('Collector state check:', {
+                        threadId: thread.id,
+                        isEnded: collector.ended,
+                        messageCount: collector.collected.size,
+                        endReason: collector.endReason || 'still running'
+                    });
+                }, 60000);
+
+                // Clean up interval on collector end
+                collector.on('end', () => {
+                    clearInterval(collectorStateCheck);
+                });
+
+                collector.on('error', (error) => {
+                    console.error('Message collector error:', {
+                        error: error.message,
+                        stack: error.stack,
+                        threadId: thread.id
+                    });
+                });
+
                 collector.on('end', (collected, reason) => {
+                    clearInterval(collectorStateCheck);
+                    
                     if (reason === 'time') {
                         cleanupComposition(thread.id);
-                        thread.send('This composition thread has expired. Please create a new one if needed.');
+                        thread.send('This composition thread has expired. Please create a new one if needed.')
+                            .catch(error => console.error('Error sending expiration message:', error));
+                    }
+                    
+                    // Cleanup regardless of reason
+                    const compositionState = activeCompositions.get(thread.id);
+                    if (compositionState) {
+                        cleanupComposition(thread.id);
                     }
                 });
 
                 collector.on('collect', async (message) => {
+                    // Add debug logging at the start of message handling
+                    console.log('Message collected:', {
+                        content: message.content,
+                        author: message.author.tag,
+                        threadId: thread.id
+                    });
+
                     try {
                         const content = message.content.substring(3).trim().toLowerCase();
                         
+                        // Add debug logging for command parsing
+                        console.log('Command parsed:', {
+                            originalContent: message.content,
+                            parsedContent: content,
+                            threadId: thread.id
+                        });
+
                         // Handle admin force-add command
                         if (content.includes('@')) {
                             const member = await message.guild.members.fetch(message.author.id);
@@ -803,7 +999,6 @@ module.exports = new Command({
                             const updatedEmbed = new EmbedBuilder(embed.toJSON());
                             let fieldIndex = 0;
                             let currentParty = null;
-                            let partyHeaderIndex = 0;
 
                             // First, find all party header indices
                             const partyHeaderIndices = [];
@@ -813,30 +1008,57 @@ module.exports = new Command({
                                 }
                             });
 
+                            // Group weapons by party
+                            const weaponsByParty = new Map();
                             for (const [name, w] of compositionState.weapons.entries()) {
-                                // If this is a new party, find the next party header index
-                                if (currentParty !== w.partyName) {
-                                    currentParty = w.partyName;
-                                    partyHeaderIndex = partyHeaderIndices.find(index => 
-                                        updatedEmbed.data.fields[index].name === `🎯 ${w.partyName.toUpperCase()}`
-                                    );
-                                    fieldIndex = partyHeaderIndex + 1; // Start after the party header
+                                if (!weaponsByParty.has(w.partyName)) {
+                                    weaponsByParty.set(w.partyName, []);
                                 }
+                                weaponsByParty.get(w.partyName).push({ name, weapon: w });
+                            }
 
-                                const participantsList = Array.from(w.participants)
-                                    .map(id => {
-                                        const isFill = w.fillPlayers?.has(id);
-                                        return `<@${id}>${isFill ? ' (fill)' : ''}`;
-                                    })
-                                    .join(', ');
-                                
-                                const roleText = w.isFreeRole ? '🔓 Free Role' : '';
-                                updatedEmbed.spliceFields(fieldIndex, 1, {
-                                    name: `${w.name} 👥${w.remaining}/${w.required}`,
-                                    value: `${participantsList ? `${participantsList}\n` : ''}\`\`\`gw ${name.toLowerCase()}\`\`\``,
-                                    inline: false
-                                });
-                                fieldIndex++;
+                            // Update fields for each party
+                            for (const [partyName, weapons] of weaponsByParty.entries()) {
+                                // Find the party header index
+                                const partyHeaderIndex = partyHeaderIndices.find(index => 
+                                    updatedEmbed.data.fields[index].name === `🎯 ${partyName.toUpperCase()}`
+                                );
+
+                                if (partyHeaderIndex !== -1) {
+                                    fieldIndex = partyHeaderIndex + 1; // Start after the party header
+
+                                    // Sort weapons by their original position
+                                    weapons.sort((a, b) => a.weapon.position - b.weapon.position);
+
+                                    // Update each weapon field
+                                    for (const { name, weapon } of weapons) {
+                                        const participantsList = Array.from(weapon.participants)
+                                            .map(id => {
+                                                const isFill = weapon.fillPlayers?.has(id);
+                                                return `<@${id}>${isFill ? ' (fill)' : ''}`;
+                                            })
+                                            .join(', ');
+                                        
+                                        const roleText = weapon.isFreeRole ? '🔓 Free Role' : '';
+                                        const formattedName = formatWeaponName(weapon.name);
+                                        updatedEmbed.spliceFields(fieldIndex, 1, {
+                                            name: `${formattedName} 👥${weapon.remaining}/${weapon.required}`,
+                                            value: `${participantsList ? `${participantsList}\n` : ''}\`\`\`gw ${name.toLowerCase()}\`\`\``,
+                                            inline: false
+                                        });
+                                        fieldIndex++;
+                                    }
+
+                                    // Add empty field for spacing between parties if not the last party
+                                    if (partyName !== Array.from(weaponsByParty.keys()).pop()) {
+                                        updatedEmbed.spliceFields(fieldIndex, 1, {
+                                            name: '\u200b',
+                                            value: ' ',
+                                            inline: false
+                                        });
+                                        fieldIndex++;
+                                    }
+                                }
                             }
 
                             // Update total count
@@ -844,16 +1066,29 @@ module.exports = new Command({
                             if (totalField !== -1) {
                                 // Calculate actual remaining players
                                 let actualRemaining = compositionState.totalRequired;
+                                let totalFillPlayers = 0;
+                                let totalParticipants = 0;
+
                                 for (const [name, w] of compositionState.weapons.entries()) {
                                     if (!w.isFreeRole) {
                                         actualRemaining -= (w.required - w.remaining);
+                                        // Count fill players
+                                        const fillCount = w.fillPlayers ? w.fillPlayers.size : 0;
+                                        totalFillPlayers += fillCount;
+                                        // Count total participants
+                                        totalParticipants += w.participants.size;
                                     }
                                 }
                                 compositionState.remainingTotal = actualRemaining;
 
+                                // Calculate fill percentage
+                                const fillPercentage = totalParticipants > 0 
+                                    ? Math.round((totalFillPlayers / totalParticipants) * 100) 
+                                    : 0;
+
                                 updatedEmbed.spliceFields(totalField, 1, {
                                     name: '📊 TOTAL COMPOSITION',
-                                    value: `👥 **Total Players Required:** ${actualRemaining}/${compositionState.totalRequired}`,
+                                    value: `👥 **Total Players Required:** ${actualRemaining}/${compositionState.totalRequired} ${totalParticipants > 0 ? `📈 ${fillPercentage}% fill` : ''}`,
                                     inline: false
                                 });
                             }
@@ -923,7 +1158,6 @@ module.exports = new Command({
                             const updatedEmbed = new EmbedBuilder(embed.toJSON());
                             let fieldIndex = 0;
                             let currentParty = null;
-                            let partyHeaderIndex = 0;
 
                             // First, find all party header indices
                             const partyHeaderIndices = [];
@@ -933,30 +1167,57 @@ module.exports = new Command({
                                 }
                             });
 
+                            // Group weapons by party
+                            const weaponsByParty = new Map();
                             for (const [name, w] of compositionState.weapons.entries()) {
-                                // If this is a new party, find the next party header index
-                                if (currentParty !== w.partyName) {
-                                    currentParty = w.partyName;
-                                    partyHeaderIndex = partyHeaderIndices.find(index => 
-                                        updatedEmbed.data.fields[index].name === `🎯 ${w.partyName.toUpperCase()}`
-                                    );
-                                    fieldIndex = partyHeaderIndex + 1; // Start after the party header
+                                if (!weaponsByParty.has(w.partyName)) {
+                                    weaponsByParty.set(w.partyName, []);
                                 }
+                                weaponsByParty.get(w.partyName).push({ name, weapon: w });
+                            }
 
-                                const participantsList = Array.from(w.participants)
-                                    .map(id => {
-                                        const isFill = w.fillPlayers?.has(id);
-                                        return `<@${id}>${isFill ? ' (fill)' : ''}`;
-                                    })
-                                    .join(', ');
-                                
-                                const roleText = w.isFreeRole ? '🔓 Free Role' : '';
-                                updatedEmbed.spliceFields(fieldIndex, 1, {
-                                    name: `${w.name} 👥 ${w.remaining}/${w.required}`,
-                                    value: `${participantsList ? `${participantsList}\n` : ''}\`\`\`gw ${name.toLowerCase()}\`\`\``,
-                                    inline: false
-                                });
-                                fieldIndex++;
+                            // Update fields for each party
+                            for (const [partyName, weapons] of weaponsByParty.entries()) {
+                                // Find the party header index
+                                const partyHeaderIndex = partyHeaderIndices.find(index => 
+                                    updatedEmbed.data.fields[index].name === `🎯 ${partyName.toUpperCase()}`
+                                );
+
+                                if (partyHeaderIndex !== -1) {
+                                    fieldIndex = partyHeaderIndex + 1; // Start after the party header
+
+                                    // Sort weapons by their original position
+                                    weapons.sort((a, b) => a.weapon.position - b.weapon.position);
+
+                                    // Update each weapon field
+                                    for (const { name, weapon } of weapons) {
+                                        const participantsList = Array.from(weapon.participants)
+                                            .map(id => {
+                                                const isFill = weapon.fillPlayers?.has(id);
+                                                return `<@${id}>${isFill ? ' (fill)' : ''}`;
+                                            })
+                                            .join(', ');
+                                        
+                                        const roleText = weapon.isFreeRole ? '🔓 Free Role' : '';
+                                        const formattedName = formatWeaponName(weapon.name);
+                                        updatedEmbed.spliceFields(fieldIndex, 1, {
+                                            name: `${formattedName} 👥${weapon.remaining}/${weapon.required}`,
+                                            value: `${participantsList ? `${participantsList}\n` : ''}\`\`\`gw ${name.toLowerCase()}\`\`\``,
+                                            inline: false
+                                        });
+                                        fieldIndex++;
+                                    }
+
+                                    // Add empty field for spacing between parties if not the last party
+                                    if (partyName !== Array.from(weaponsByParty.keys()).pop()) {
+                                        updatedEmbed.spliceFields(fieldIndex, 1, {
+                                            name: '\u200b',
+                                            value: ' ',
+                                            inline: false
+                                        });
+                                        fieldIndex++;
+                                    }
+                                }
                             }
 
                             // Update total count
@@ -1021,7 +1282,7 @@ module.exports = new Command({
                             const verifiedCharacter = await getVerifiedCharacter(message.author.id, message.guild.id);
                             if (!verifiedCharacter) {
                                 await message.reply({
-                                    content: `You need to verify or register your Albion character first using the \`/verify\` or \`/register\` command.`,
+                                    content: `You need to register your Albion character first using the \`/register\` command.`,
                                     ephemeral: true
                                 });
                                 return;
@@ -1038,7 +1299,7 @@ module.exports = new Command({
                                 // Add recent weapons first (they take priority)
                                 if (experience.topRecentWeapons?.length > 0) {
                                     experience.topRecentWeapons
-                                        .filter(w => w.weapon_name && w.weapon_name.trim() !== '')
+                                        .filter(w => w.weapon_name && w.weapon_name.trim() !== '' && w.usages > 0)
                                         .slice(0, 3)
                                         .forEach(w => {
                                             allWeapons.set(w.weapon_name.toLowerCase(), {
@@ -1052,7 +1313,7 @@ module.exports = new Command({
                                 // Add all-time weapons and combine usages if weapon exists
                                 if (experience.topAllTimeWeapons?.length > 0) {
                                     experience.topAllTimeWeapons
-                                        .filter(w => w.weapon_name && w.weapon_name.trim() !== '')
+                                        .filter(w => w.weapon_name && w.weapon_name.trim() !== '' && w.usages > 0)
                                         .slice(0, 3)
                                         .forEach(w => {
                                             const existingWeapon = allWeapons.get(w.weapon_name.toLowerCase());
@@ -1197,22 +1458,26 @@ module.exports = new Command({
                                     let responseMessage = `⚠️ Warning: You don't have recent experience with ${weapon.name}.\n\n`;
                                     
                                     // Add recent weapons experience
-                                    if (experience.topRecentWeapons?.length > 0) {
+                                    if (experience.topRecentWeapons?.filter(w => w.weapon_name && w.weapon_name.trim() !== '' && w.usages > 0).length > 0) {
                                         responseMessage += '**Your Recent Weapons (Last 30 days):**\n';
-                                        experience.topRecentWeapons.forEach(w => {
-                                            responseMessage += `• ${w.weapon_name}: ${w.usages} uses\n`;
-                                        });
+                                        experience.topRecentWeapons
+                                            .filter(w => w.weapon_name && w.weapon_name.trim() !== '' && w.usages > 0)
+                                            .forEach(w => {
+                                                responseMessage += `• ${w.weapon_name}: ${w.usages} uses\n`;
+                                            });
                                         responseMessage += '\n';
                                     } else {
                                         responseMessage += '**No Recent PvP Activity (Last 30 days)**\n\n';
                                     }
 
                                     // Add all-time weapons experience
-                                    if (experience.topAllTimeWeapons?.length > 0) {
+                                    if (experience.topAllTimeWeapons?.filter(w => w.weapon_name && w.weapon_name.trim() !== '' && w.usages > 0).length > 0) {
                                         responseMessage += '**Your All-Time Top Weapons:**\n';
-                                        experience.topAllTimeWeapons.forEach(w => {
-                                            responseMessage += `• ${w.weapon_name}: ${w.usages} uses\n`;
-                                        });
+                                        experience.topAllTimeWeapons
+                                            .filter(w => w.weapon_name && w.weapon_name.trim() !== '' && w.usages > 0)
+                                            .forEach(w => {
+                                                responseMessage += `• ${w.weapon_name}: ${w.usages} uses\n`;
+                                            });
                                         responseMessage += '\n';
                                     } else {
                                         responseMessage += '**No All-Time PvP Records Found**\n\n';
@@ -1353,7 +1618,6 @@ module.exports = new Command({
                             const updatedEmbed = new EmbedBuilder(embed.toJSON());
                             let fieldIndex = 0;
                             let currentParty = null;
-                            let partyHeaderIndex = 0;
 
                             // First, find all party header indices
                             const partyHeaderIndices = [];
@@ -1363,30 +1627,57 @@ module.exports = new Command({
                                 }
                             });
 
+                            // Group weapons by party
+                            const weaponsByParty = new Map();
                             for (const [name, w] of compositionState.weapons.entries()) {
-                                // If this is a new party, find the next party header index
-                                if (currentParty !== w.partyName) {
-                                    currentParty = w.partyName;
-                                    partyHeaderIndex = partyHeaderIndices.find(index => 
-                                        updatedEmbed.data.fields[index].name === `🎯 ${w.partyName.toUpperCase()}`
-                                    );
-                                    fieldIndex = partyHeaderIndex + 1; // Start after the party header
+                                if (!weaponsByParty.has(w.partyName)) {
+                                    weaponsByParty.set(w.partyName, []);
                                 }
+                                weaponsByParty.get(w.partyName).push({ name, weapon: w });
+                            }
 
-                                const participantsList = Array.from(w.participants)
-                                    .map(id => {
-                                        const isFill = w.fillPlayers?.has(id);
-                                        return `<@${id}>${isFill ? ' (fill)' : ''}`;
-                                    })
-                                    .join(', ');
-                                
-                                const roleText = w.isFreeRole ? '🔓 Free Role' : '';
-                                updatedEmbed.spliceFields(fieldIndex, 1, {
-                                    name: `${w.name} 👥${w.remaining}/${w.required}`,
-                                    value: `${participantsList ? `${participantsList}\n` : ''}\`\`\`gw ${name.toLowerCase()}\`\`\``,
-                                    inline: false
-                                });
-                                fieldIndex++;
+                            // Update fields for each party
+                            for (const [partyName, weapons] of weaponsByParty.entries()) {
+                                // Find the party header index
+                                const partyHeaderIndex = partyHeaderIndices.find(index => 
+                                    updatedEmbed.data.fields[index].name === `🎯 ${partyName.toUpperCase()}`
+                                );
+
+                                if (partyHeaderIndex !== -1) {
+                                    fieldIndex = partyHeaderIndex + 1; // Start after the party header
+
+                                    // Sort weapons by their original position
+                                    weapons.sort((a, b) => a.weapon.position - b.weapon.position);
+
+                                    // Update each weapon field
+                                    for (const { name, weapon } of weapons) {
+                                        const participantsList = Array.from(weapon.participants)
+                                            .map(id => {
+                                                const isFill = weapon.fillPlayers?.has(id);
+                                                return `<@${id}>${isFill ? ' (fill)' : ''}`;
+                                            })
+                                            .join(', ');
+                                        
+                                        const roleText = weapon.isFreeRole ? '🔓 Free Role' : '';
+                                        const formattedName = formatWeaponName(weapon.name);
+                                        updatedEmbed.spliceFields(fieldIndex, 1, {
+                                            name: `${formattedName} 👥${weapon.remaining}/${weapon.required}`,
+                                            value: `${participantsList ? `${participantsList}\n` : ''}\`\`\`gw ${name.toLowerCase()}\`\`\``,
+                                            inline: false
+                                        });
+                                        fieldIndex++;
+                                    }
+
+                                    // Add empty field for spacing between parties if not the last party
+                                    if (partyName !== Array.from(weaponsByParty.keys()).pop()) {
+                                        updatedEmbed.spliceFields(fieldIndex, 1, {
+                                            name: '\u200b',
+                                            value: ' ',
+                                            inline: false
+                                        });
+                                        fieldIndex++;
+                                    }
+                                }
                             }
 
                             // Update total count
@@ -1394,16 +1685,29 @@ module.exports = new Command({
                             if (totalField !== -1) {
                                 // Calculate actual remaining players
                                 let actualRemaining = compositionState.totalRequired;
+                                let totalFillPlayers = 0;
+                                let totalParticipants = 0;
+
                                 for (const [name, w] of compositionState.weapons.entries()) {
                                     if (!w.isFreeRole) {
                                         actualRemaining -= (w.required - w.remaining);
+                                        // Count fill players
+                                        const fillCount = w.fillPlayers ? w.fillPlayers.size : 0;
+                                        totalFillPlayers += fillCount;
+                                        // Count total participants
+                                        totalParticipants += w.participants.size;
                                     }
                                 }
                                 compositionState.remainingTotal = actualRemaining;
 
+                                // Calculate fill percentage
+                                const fillPercentage = totalParticipants > 0 
+                                    ? Math.round((totalFillPlayers / totalParticipants) * 100) 
+                                    : 0;
+
                                 updatedEmbed.spliceFields(totalField, 1, {
                                     name: '📊 TOTAL COMPOSITION',
-                                    value: `👥 **Total Players Required:** ${actualRemaining}/${compositionState.totalRequired}`,
+                                    value: `👥 **Total Players Required:** ${actualRemaining}/${compositionState.totalRequired} ${totalParticipants > 0 ? `📈 ${fillPercentage}% fill` : ''}`,
                                     inline: false
                                 });
                             }

@@ -405,9 +405,6 @@ class CommandHandler {
         case 'registerhim':
           await this.handleRegisterHim(interaction);
           break;
-        case 'pingpvp':
-          await this.handlePingPvP(interaction);
-          break;
         default:
           const command = this.commands.get(commandName) ||
             this.commands.find(cmd => cmd.aliases?.includes(commandName));
