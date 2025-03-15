@@ -17,6 +17,14 @@ function normalizeGuildName(name) {
         .replace(/[^a-z0-9]/g, ''); // Remove special chars and spaces
 }
 
+// Helper function to check if battle is within time bounds
+function isBattleWithinTimeBounds(battleTime, lastBattleTime, sevenDaysAgo) {
+    if (lastBattleTime) {
+        return battleTime > lastBattleTime;
+    }
+    return battleTime > sevenDaysAgo;
+}
+
 // Helper function to check if two battles should be merged
 function shouldMergeBattles(battle1, battle2, normalizedEnemyGuilds) {
     // Check time difference (less than 30 minutes)
@@ -122,15 +130,15 @@ class BattleSyncService {
                         orderBy: { battleTime: 'desc' }
                     });
 
-                    // If no last battle, set a limit to 7 days ago
+                    const lastBattleTime = lastBattle ? new Date(lastBattle.battleTime) : null;
                     const sevenDaysAgo = new Date();
                     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
                     
                     let page = 1;
-                    let foundLastBattle = false;
+                    let shouldContinue = true;
                     let processedBattles = new Set();
 
-                    while (!foundLastBattle) {
+                    while (shouldContinue) {
                         // Get battles from API
                         logger.info(`Fetching battles page ${page} for guild ${guildName}...`);
                         const battlesResponse = await axios.get(`https://api.albionbb.com/us/battles?guildId=${guildSettings.albionGuildId}&minPlayers=20&page=${page}`);
@@ -140,18 +148,19 @@ class BattleSyncService {
                         }
 
                         const battles = battlesResponse.data;
+                        let foundCurrentPageBattle = false;
 
                         // Process each battle
                         for (const battle of battles) {
                             const battleTime = new Date(battle.startedAt);
                             
-                            // If we have a last battle and this battle is older, stop processing
-                            // If no last battle, stop if battle is older than 7 days
-                            if ((lastBattle && battleTime <= new Date(lastBattle.battleTime)) || 
-                                (!lastBattle && battleTime <= sevenDaysAgo)) {
-                                foundLastBattle = true;
+                            // Strict time boundary check
+                            if (!isBattleWithinTimeBounds(battleTime, lastBattleTime, sevenDaysAgo)) {
+                                shouldContinue = false;
                                 break;
                             }
+
+                            foundCurrentPageBattle = true;
 
                             // Skip if already processed
                             if (processedBattles.has(battle.albionId)) {
@@ -164,16 +173,20 @@ class BattleSyncService {
                                 continue;
                             }
 
+                            processedBattles.add(battle.albionId);
+
                             // Get enemy guilds
                             const enemyGuilds = battle.guilds
                                 .filter(g => g.name !== guildName)
                                 .map(g => g.name);
                             const normalizedEnemyGuilds = enemyGuilds.map(normalizeGuildName);
 
-                            // Look for related battles
+                            // Look for related battles within the same time bounds
                             let relatedBattles = [battle];
                             for (const otherBattle of battles) {
-                                if (otherBattle.albionId !== battle.albionId && !processedBattles.has(otherBattle.albionId)) {
+                                if (otherBattle.albionId !== battle.albionId && 
+                                    !processedBattles.has(otherBattle.albionId) && 
+                                    isBattleWithinTimeBounds(new Date(otherBattle.startedAt), lastBattleTime, sevenDaysAgo)) {
                                     if (shouldMergeBattles(battle, otherBattle, normalizedEnemyGuilds)) {
                                         relatedBattles.push(otherBattle);
                                         processedBattles.add(otherBattle.albionId);
@@ -249,7 +262,7 @@ class BattleSyncService {
                             }
                         }
 
-                        if (foundLastBattle || battles.length < 20) {
+                        if (!foundCurrentPageBattle || battles.length < 20) {
                             break;
                         }
 
