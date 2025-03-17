@@ -1,5 +1,6 @@
 const Command = require('../../structures/Command');
 const { EmbedBuilder, Colors } = require('discord.js');
+const BattleSyncService = require('../../services/BattleSyncService');
 
 module.exports = new Command({
     name: 'syncnow',
@@ -16,11 +17,8 @@ module.exports = new Command({
                 await message.deferReply() : 
                 await message.reply('🔄 Starting manual battle sync...');
 
-            // Get the BattleSyncService instance from the handler
-            const battleSyncService = handler.client.services.get('BattleSyncService');
-            if (!battleSyncService) {
-                throw new Error('Battle sync service not available');
-            }
+            // Create a new instance of BattleSyncService
+            const battleSyncService = new BattleSyncService(handler.client);
 
             // Run the sync process
             const results = await battleSyncService.syncRecentBattles();
