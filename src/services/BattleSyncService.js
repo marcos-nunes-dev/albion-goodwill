@@ -151,8 +151,11 @@ class BattleSyncService {
                                 }
 
                                 // Check if our guild has enough players
-                                const ourGuildInBattle = battle.guilds.find(g => g.name === guildName);
-                                if (!ourGuildInBattle || ourGuildInBattle.players < 10) {
+                                const ourGuildInBattle = battle.guilds.find(g => normalizeGuildName(g.name) === normalizeGuildName(guildName));
+                                logger.info(`Battle ${battle.albionId} - Guild check: ${guildName} - Found: ${!!ourGuildInBattle} - Players: ${ourGuildInBattle?.players || 0}`);
+                                
+                                if (!ourGuildInBattle || ourGuildInBattle.players < 5) {
+                                    logger.info(`Battle ${battle.albionId} - Skipped: Not enough players (${ourGuildInBattle?.players || 0} < 5)`);
                                     continue;
                                 }
 
@@ -172,20 +175,24 @@ class BattleSyncService {
 
                                     // Calculate stats
                                     const stats = battleEvents.reduce((acc, event) => {
-                                        if (event.Killer.GuildName === guildName) acc.kills++;
-                                        if (event.Victim.GuildName === guildName) acc.deaths++;
+                                        if (normalizeGuildName(event.Killer.GuildName) === normalizeGuildName(guildName)) acc.kills++;
+                                        if (normalizeGuildName(event.Victim.GuildName) === normalizeGuildName(guildName)) acc.deaths++;
                                         return acc;
                                     }, { kills: 0, deaths: 0 });
 
+                                    logger.info(`Battle ${battle.albionId} - Stats: Kills=${stats.kills}, Deaths=${stats.deaths}`);
+
                                     // Only process battles with significant participation
-                                    if (stats.kills >= 4 || stats.deaths >= 4) {
+                                    if (stats.kills >= 2 || stats.deaths >= 2) {
                                         results.battlesFound++;
+                                        logger.info(`Battle ${battle.albionId} - Significant participation found (K:${stats.kills}/D:${stats.deaths})`);
 
                                         // Get enemy guilds
                                         const enemyGuilds = battle.guilds
-                                            .filter(g => g.name !== guildName)
+                                            .filter(g => normalizeGuildName(g.name) !== normalizeGuildName(guildName))
                                             .map(g => g.name);
 
+                                        logger.info(`Battle ${battle.albionId} - Enemy guilds: ${enemyGuilds.join(', ')}`);
                                         const battleUrl = `https://albionbb.com/battles/${battle.albionId}`;
 
                                         try {
@@ -198,6 +205,7 @@ class BattleSyncService {
                                             });
 
                                             if (!existingBattle) {
+                                                logger.info(`Battle ${battle.albionId} - Attempting to register (New battle)`);
                                                 // Register the battle
                                                 await prisma.battleRegistration.create({
                                                     data: {
@@ -212,14 +220,19 @@ class BattleSyncService {
                                                     }
                                                 });
                                                 results.battlesRegistered++;
+                                                logger.info(`Battle ${battle.albionId} - Successfully registered! K:${stats.kills}/D:${stats.deaths} - Victory: ${stats.kills > stats.deaths}`);
+                                            } else {
+                                                logger.info(`Battle ${battle.albionId} - Already registered, skipping`);
                                             }
                                         } catch (error) {
-                                            logger.error('Error registering battle:', error);
+                                            logger.error(`Battle ${battle.albionId} - Error registering:`, error.message, error.stack);
                                             results.errors++;
                                         }
+                                    } else {
+                                        logger.info(`Battle ${battle.albionId} - Skipped: Not enough kills/deaths (K:${stats.kills}/D:${stats.deaths})`);
                                     }
                                 } catch (error) {
-                                    logger.error(`Error processing battle ${battle.albionId}:`, error);
+                                    logger.error(`Error processing battle ${battle.albionId}:`, error.message, error.stack);
                                     results.errors++;
                                 }
                             }
