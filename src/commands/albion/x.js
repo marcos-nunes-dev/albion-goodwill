@@ -19,6 +19,13 @@ module.exports = new Command({
     ],
     async execute(interaction) {
         try {
+            // Debug: Log user and guild information
+            console.log('Registration Check - Input Parameters:', {
+                userId: interaction.user.id,
+                guildId: interaction.guildId,
+                username: interaction.user.tag
+            });
+
             // Check if user is registered
             const registration = await prisma.playerRegistration.findFirst({
                 where: {
@@ -27,7 +34,19 @@ module.exports = new Command({
                 }
             });
 
+            // Debug: Log registration result
+            console.log('Registration Check - Query Result:', {
+                found: !!registration,
+                registration: registration ? {
+                    id: registration.id,
+                    userId: registration.userId,
+                    guildId: registration.guildId,
+                    createdAt: registration.createdAt
+                } : null
+            });
+
             if (!registration) {
+                console.log('Registration Check - Failed: User not registered');
                 return interaction.reply({
                     content: 'You need to register with /register first.',
                     ephemeral: true
