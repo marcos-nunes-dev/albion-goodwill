@@ -106,7 +106,16 @@ async function updateBattleLogChannelName(guild, channelId) {
             }
         });
 
-        // Fetch all non-stale battles
+        // Get the timestamp of the last posted battle
+        let lastPostedBattle = null;
+        if (battleMessages.size > 0) {
+            const lastBattleMessage = battleMessages.first();
+            if (lastBattleMessage?.embeds[0]?.timestamp) {
+                lastPostedBattle = new Date(lastBattleMessage.embeds[0].timestamp);
+            }
+        }
+
+        // Fetch only new battles that haven't been posted yet
         const battles = await prisma.battleRegistration.findMany({
             where: {
                 guildId: guild.id,
@@ -114,51 +123,54 @@ async function updateBattleLogChannelName(guild, channelId) {
                     not: 'stale',
                     not: null,
                     not: ''
+                },
+                ...(lastPostedBattle && {
+                    battleTime: {
+                        gt: lastPostedBattle
+                    }
+                }),
+                id: {
+                    notIn: Array.from(postedBattleIds)
                 }
             },
             orderBy: {
                 battleTime: 'desc'
-            },
-            include: {
-                // Include user information if needed
             }
         });
 
         // Post new battles that haven't been posted yet
         for (const battle of battles) {
-            if (!postedBattleIds.has(battle.id)) {
-                // Limit enemy guilds list to fit Discord's title limit
-                let enemyGuildsList = battle.enemyGuilds.join(', ');
-                if (enemyGuildsList.length > 200) { // Leave room for "🏆 Victory vs " or "💀 Defeat vs "
-                    const truncatedGuilds = [];
-                    let totalLength = 0;
-                    for (const guild of battle.enemyGuilds) {
-                        if (totalLength + guild.length + 2 > 197) { // +2 for ", " separator, leave room for "..."
-                            truncatedGuilds.push('...');
-                            break;
-                        }
-                        truncatedGuilds.push(guild);
-                        totalLength += guild.length + 2; // +2 for ", " separator
+            // Limit enemy guilds list to fit Discord's title limit
+            let enemyGuildsList = battle.enemyGuilds.join(', ');
+            if (enemyGuildsList.length > 200) {
+                const truncatedGuilds = [];
+                let totalLength = 0;
+                for (const guild of battle.enemyGuilds) {
+                    if (totalLength + guild.length + 2 > 197) {
+                        truncatedGuilds.push('...');
+                        break;
                     }
-                    enemyGuildsList = truncatedGuilds.join(', ');
+                    truncatedGuilds.push(guild);
+                    totalLength += guild.length + 2;
                 }
-
-                const battleEmbed = new EmbedBuilder()
-                    .setTitle(`${battle.isVictory ? '🏆 Victory' : '💀 Defeat'} vs ${enemyGuildsList}`)
-                    .setDescription([
-                        `⚔️ **Battle Stats**`,
-                        `Kills: ${battle.kills || 0}`,
-                        `Deaths: ${battle.deaths || 0}`,
-                        `K/D: ${battle.deaths > 0 ? (battle.kills / battle.deaths).toFixed(2) : battle.kills > 0 ? '∞' : '0'}`,
-                        '',
-                        battle.battleUrl ? `[View Battle Report](${battle.battleUrl})` : 'No battle report available'
-                    ].join('\n'))
-                    .setColor(battle.isVictory ? '#00FF00' : '#FF0000')
-                    .setTimestamp(new Date(battle.battleTime))
-                    .setFooter({ text: `Battle ID: ${battle.id}` });
-
-                await channel.send({ embeds: [battleEmbed] });
+                enemyGuildsList = truncatedGuilds.join(', ');
             }
+
+            const battleEmbed = new EmbedBuilder()
+                .setTitle(`${battle.isVictory ? '🏆 Victory' : '💀 Defeat'} vs ${enemyGuildsList}`)
+                .setDescription([
+                    `⚔️ **Battle Stats**`,
+                    `Kills: ${battle.kills || 0}`,
+                    `Deaths: ${battle.deaths || 0}`,
+                    `K/D: ${battle.deaths > 0 ? (battle.kills / battle.deaths).toFixed(2) : battle.kills > 0 ? '∞' : '0'}`,
+                    '',
+                    battle.battleUrl ? `[View Battle Report](${battle.battleUrl})` : 'No battle report available'
+                ].join('\n'))
+                .setColor(battle.isVictory ? '#00FF00' : '#FF0000')
+                .setTimestamp(new Date(battle.battleTime))
+                .setFooter({ text: `Battle ID: ${battle.id}` });
+
+            await channel.send({ embeds: [battleEmbed] });
         }
 
     } catch (error) {
