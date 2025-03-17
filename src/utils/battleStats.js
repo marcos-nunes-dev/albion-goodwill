@@ -124,14 +124,22 @@ async function updateBattleLogChannelName(guild, channelId) {
                     not: null,
                     not: ''
                 },
-                ...(lastPostedBattle && {
-                    battleTime: {
-                        gt: lastPostedBattle
+                OR: [
+                    {
+                        // Battles newer than the last posted battle
+                        ...(lastPostedBattle && {
+                            battleTime: {
+                                gt: lastPostedBattle
+                            }
+                        })
+                    },
+                    {
+                        // Battles that haven't been posted yet (by ID check)
+                        id: {
+                            notIn: Array.from(postedBattleIds)
+                        }
                     }
-                }),
-                id: {
-                    notIn: Array.from(postedBattleIds)
-                }
+                ]
             },
             orderBy: {
                 battleTime: 'asc'
@@ -140,6 +148,11 @@ async function updateBattleLogChannelName(guild, channelId) {
 
         // Post new battles that haven't been posted yet
         for (const battle of battles) {
+            // Skip if we've already posted this battle (double-check)
+            if (postedBattleIds.has(battle.id)) {
+                continue;
+            }
+
             // Limit enemy guilds list to fit Discord's title limit
             let enemyGuildsList = battle.enemyGuilds.join(', ');
             if (enemyGuildsList.length > 200) {
