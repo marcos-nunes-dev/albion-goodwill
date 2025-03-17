@@ -1,7 +1,8 @@
 const { Collection } = require('discord.js');
 const { readdirSync, statSync } = require('fs');
 const { join } = require('path');
-const prisma = require('../config/prisma');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 const { formatDuration, getWeekStart, getMonthStart } = require('../utils/timeUtils');
 const { fetchGuildStats, getMainRole, calculatePlayerScores } = require('../utils/albionApi');
 const axios = require('axios');
@@ -398,83 +399,57 @@ class CommandHandler {
     const commandName = interaction.commandName;
 
     try {
-      switch (commandName) {
-        case 'battleruncron':
-          await this.handleBattleRunCron(interaction);
-          break;
-        case 'registerhim':
-          await this.handleRegisterHim(interaction);
-          break;
-        default:
-          const command = this.commands.get(commandName) ||
-            this.commands.find(cmd => cmd.aliases?.includes(commandName));
-
-          if (!command) return;
-
-          // Check permissions
-          if (command.permissions?.length > 0) {
-            const missingPerms = command.permissions.filter(perm => !interaction.member.permissions.has(perm));
-            if (missingPerms.length > 0) {
-              return interaction.reply({
-                content: `You need the following permissions: ${missingPerms.join(', ')}`,
-                ephemeral: true
-              });
-            }
-          }
-
-          // Check cooldown
-          if (!this.checkCooldown(interaction, command)) return;
-
-          // List of commands that don't require full configuration
-          const setupCommands = [
-            'settings',
-            'setprefix',
-            'setguildid',
-            'setguildname',
-            'setrole',
-            'setverifiedrole',
-            'competitors',
-            'help',
-            'ping',
-            'setup',
-            'refreshcommands',
-            'setupcreateroles'
-          ];
-
-          // Skip configuration check for setup commands
-          if (!setupCommands.includes(commandName)) {
-            const { validateGuildConfiguration } = require('../utils/validators');
-            const { isConfigured, missingFields } = await validateGuildConfiguration(interaction.guildId);
-
-            if (!isConfigured) {
-              const embed = new EmbedBuilder()
-                .setTitle('⚠️ Missing Configuration')
-                .setDescription('This command requires all guild settings to be configured first.')
-                .addFields({
-                  name: 'Missing Settings',
-                  value: missingFields.map(field => `• ${field}`).join('\n')
-                })
-                .addFields({
-                  name: 'How to Fix',
-                  value: 'Use `/settings` to view current settings and configure missing fields. You can use `/setup` to configure all settings manually or /setupcreateroles to create all roles automatically.'
-                })
-                .setColor(Colors.Yellow)
-                .setTimestamp();
-
-              return interaction.reply({ embeds: [embed], ephemeral: true });
-            }
-          }
-
-          // Execute command with handler instance
-          await command.execute(interaction, [], this);
+      if (commandName === 'battleruncron') {
+        await this.handleBattleRunCron(interaction);
+        return;
       }
+
+      // Load command file directly for slash commands
+      let command;
+      try {
+        command = require(`../commands/admin/${commandName}.js`);
+      } catch (e) {
+        try {
+          command = require(`../commands/albion/${commandName}.js`);
+        } catch (e) {
+          command = this.commands.get(commandName);
+        }
+      }
+
+      if (!command) {
+        console.error(`Command not found: ${commandName}`);
+        return await interaction.reply({
+          content: 'Command not found.',
+          ephemeral: true
+        });
+      }
+
+      // Check permissions
+      if (command.permissions?.length > 0) {
+        const missingPerms = command.permissions.filter(perm => !interaction.member.permissions.has(perm));
+        if (missingPerms.length > 0) {
+          return interaction.reply({
+            content: `You need the following permissions: ${missingPerms.join(', ')}`,
+            ephemeral: true
+          });
+        }
+      }
+
+      // Check cooldown
+      if (!this.checkCooldown(interaction, command)) return;
+
+      // Execute command
+      await command.execute(interaction, null, true);
     } catch (error) {
-      console.error(`Error handling command ${commandName}:`, error);
-      const errorMessage = error.message || 'An error occurred while executing the command.';
-      if (interaction.deferred) {
-        await interaction.editReply({ content: `❌ ${errorMessage}`, ephemeral: true });
+      console.error('Error handling command:', error);
+      const errorMessage = {
+        content: 'There was an error while executing this command!',
+        ephemeral: true
+      };
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp(errorMessage);
       } else {
-        await interaction.reply({ content: `❌ ${errorMessage}`, ephemeral: true });
+        await interaction.reply(errorMessage);
       }
     }
   }
@@ -967,11 +942,7 @@ class CommandHandler {
 
       const successResponse = 'Comandos slash recarregados com sucesso!';
       if (source.commandName) {
-        if (source.replied) {
-          await source.editReply(successResponse);
-        } else {
-          await source.reply({ content: successResponse, ephemeral: true });
-        }
+        await source.editReply(successResponse);
       } else {
         await source.channel.send(successResponse);
       }
@@ -1701,6 +1672,96 @@ class CommandHandler {
       } else {
         await source.reply(response);
       }
+    }
+  }
+
+  async handleRegisterHim(interaction) {
+    try {
+      const user = interaction.options.getUser('user');
+      const region = interaction.options.getString('region');
+      const character = interaction.options.getString('character');
+
+      if (!user || !region || !character) {
+        return await interaction.reply({
+          content: 'Please provide all required parameters: user, region, and character name.',
+          ephemeral: true
+        });
+      }
+
+      const existingRegistration = await prisma.registration.findUnique({
+        where: { userId: user.id }
+      });
+
+      if (existingRegistration) {
+        return await interaction.reply({
+          content: `${user.toString()} is already registered as "${existingRegistration.playerName}". Please unregister them first.`,
+          ephemeral: true
+        });
+      }
+
+      const guildSettings = await prisma.guildSettings.findUnique({
+        where: { guildId: interaction.guild.id }
+      });
+
+      if (!guildSettings?.guildId) {
+        return await interaction.reply({
+          content: 'Guild settings not configured. Please use `/setup` first.',
+          ephemeral: true
+        });
+      }
+
+      const { data: playerData } = await axios.get(`https://gameinfo.albiononline.com/api/gameinfo/search?q=${encodeURIComponent(character)}`);
+      const player = playerData.players.find(p => p.Name.toLowerCase() === character.toLowerCase());
+
+      if (!player) {
+        return await interaction.reply({
+          content: `Could not find player "${character}" in Albion Online.`,
+          ephemeral: true
+        });
+      }
+
+      await prisma.registration.create({
+        data: {
+          userId: user.id,
+          guildId: interaction.guild.id,
+          playerName: player.Name,
+          playerId: player.Id,
+          region: region
+        }
+      });
+
+      if (guildSettings.verifiedRoleId) {
+        const verifiedRole = interaction.guild.roles.cache.get(guildSettings.verifiedRoleId);
+        if (verifiedRole) {
+          const member = await interaction.guild.members.fetch(user.id);
+          await member.roles.add(verifiedRole);
+        }
+      }
+
+      if (guildSettings.syncNickname) {
+        const member = await interaction.guild.members.fetch(user.id);
+        await member.setNickname(player.Name).catch(() => {
+          console.warn(`Failed to set nickname for ${user.tag} to ${player.Name}`);
+        });
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor(Colors.Green)
+        .setTitle('Registration Successful')
+        .setDescription(`Successfully registered ${user.toString()} as "${player.Name}"`)
+        .addFields(
+          { name: 'Region', value: region.charAt(0).toUpperCase() + region.slice(1), inline: true },
+          { name: 'Kill Fame', value: player.KillFame.toLocaleString(), inline: true },
+          { name: 'Death Fame', value: player.DeathFame.toLocaleString(), inline: true }
+        );
+
+      await interaction.reply({ embeds: [embed] });
+    } catch (error) {
+      console.error('Error in handleRegisterHim:', error);
+      await interaction.reply({
+        content: 'An error occurred while processing the registration.',
+        ephemeral: true
+      });
     }
   }
 }

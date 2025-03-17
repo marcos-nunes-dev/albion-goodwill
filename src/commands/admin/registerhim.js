@@ -10,7 +10,7 @@ const {
     handleAutocomplete
 } = require('../../utils/albionRegistration');
 
-module.exports = new Command({
+module.exports = {
     name: 'registerhim',
     description: 'Register an Albion Online character for another user (Admin only)',
     defaultMemberPermissions: PermissionFlagsBits.Administrator,
@@ -40,64 +40,34 @@ module.exports = new Command({
             autocomplete: true
         }
     ],
-    // Add autocomplete handler
     async autocomplete(interaction) {
         await handleAutocomplete(interaction);
     },
-    async execute(message, args, isSlash = false) {
+    async execute(interaction) {
         try {
-            if (isSlash) {
-                await message.deferReply({ ephemeral: true });
-            }
+            await interaction.deferReply({ ephemeral: true });
 
-            const targetUser = isSlash ? 
-                message.options.getUser('user') : 
-                message.mentions.users.first();
-
-            const targetMember = await message.guild.members.fetch(targetUser.id);
-
-            const region = isSlash ? 
-                message.options.getString('region') : 
-                args[1]?.toLowerCase();
-
-            const nickname = isSlash ? 
-                message.options.getString('character') : 
-                args[2];
+            const targetUser = interaction.options.getUser('user');
+            const targetMember = await interaction.guild.members.fetch(targetUser.id);
+            const region = interaction.options.getString('region');
+            const nickname = interaction.options.getString('character');
 
             if (!targetUser || !region || !nickname) {
-                const errorMessage = '❌ Please provide all required parameters: user, region, and character name.';
-                if (isSlash) {
-                    await message.editReply(errorMessage);
-                } else {
-                    await message.reply(errorMessage);
-                }
-                return;
+                return await interaction.editReply('❌ Please provide all required parameters: user, region, and character name.');
             }
 
             // Get guild settings
             const settings = await prisma.guildSettings.findUnique({
-                where: { guildId: message.guildId }
+                where: { guildId: interaction.guildId }
             });
 
             if (!settings?.nicknameVerifiedId) {
-                const response = '⚠️ Verified role not configured. Use `/setverifiedrole` to configure.';
-                if (isSlash) {
-                    await message.editReply(response);
-                } else {
-                    await message.reply(response);
-                }
-                return;
+                return await interaction.editReply('⚠️ Verified role not configured. Use `/setverifiedrole` to configure.');
             }
 
             const apiEndpoint = getApiEndpoint(region);
             if (!apiEndpoint) {
-                const response = '❌ Invalid region. Use: america, europe or asia';
-                if (isSlash) {
-                    await message.editReply(response);
-                } else {
-                    await message.reply(response);
-                }
-                return;
+                return await interaction.editReply('❌ Invalid region. Use: america, europe or asia');
             }
 
             // Find player
@@ -115,31 +85,20 @@ module.exports = new Command({
                     response = '❌ Player not found.';
                 }
                 
-                if (isSlash) {
-                    await message.editReply(response);
-                } else {
-                    await message.reply(response);
-                }
-                return;
+                return await interaction.editReply(response);
             }
 
             const { playerName } = playerResult;
 
             // Check if player name is available
             if (!await checkPlayerNameAvailability(playerName, targetUser.id)) {
-                const response = `❌ "${playerName}" is already registered by another user.`;
-                if (isSlash) {
-                    await message.editReply(response);
-                } else {
-                    await message.reply(response);
-                }
-                return;
+                return await interaction.editReply(`❌ "${playerName}" is already registered by another user.`);
             }
 
             // Register player
             await registerPlayer({
                 userId: targetUser.id,
-                guildId: message.guildId,
+                guildId: interaction.guildId,
                 region,
                 playerName,
                 albionGuildId: settings.albionGuildId
@@ -148,55 +107,42 @@ module.exports = new Command({
             // Handle roles and nickname
             const roleResult = await handleRolesAndNickname({
                 member: targetMember,
-                guild: message.guild,
+                guild: interaction.guild,
                 settings,
                 playerName
             });
 
-            const response = {
-                embeds: [
-                    new EmbedBuilder()
-                        .setTitle(roleResult.success ? '✅ Registration Successful' : '⚠️ Partial Registration')
-                        .setDescription(`Successfully registered Albion Online character for ${targetUser.toString()}`)
-                        .addFields([
-                            {
-                                name: 'Character Name',
-                                value: `\`${playerName}\``,
-                                inline: true
-                            },
-                            {
-                                name: 'Region',
-                                value: `\`${region.charAt(0).toUpperCase() + region.slice(1)}\``,
-                                inline: true
-                            },
-                            {
-                                name: 'Status',
-                                value: roleResult.status,
-                                inline: true
-                            }
-                        ])
-                        .setColor(roleResult.success ? Colors.Green : Colors.Yellow)
-                        .setTimestamp()
-                        .setFooter({ 
-                            text: `Registered by ${message.user?.tag || message.author.tag}` 
-                        })
-                ]
-            };
+            const embed = new EmbedBuilder()
+                .setTitle(roleResult.success ? '✅ Registration Successful' : '⚠️ Partial Registration')
+                .setDescription(`Successfully registered Albion Online character for ${targetUser.toString()}`)
+                .addFields([
+                    {
+                        name: 'Character Name',
+                        value: `\`${playerName}\``,
+                        inline: true
+                    },
+                    {
+                        name: 'Region',
+                        value: `\`${region.charAt(0).toUpperCase() + region.slice(1)}\``,
+                        inline: true
+                    },
+                    {
+                        name: 'Status',
+                        value: roleResult.status,
+                        inline: true
+                    }
+                ])
+                .setColor(roleResult.success ? Colors.Green : Colors.Yellow)
+                .setTimestamp()
+                .setFooter({ 
+                    text: `Registered by ${interaction.user.tag}` 
+                });
 
-            if (isSlash) {
-                await message.editReply(response);
-            } else {
-                await message.reply(response);
-            }
+            await interaction.editReply({ embeds: [embed] });
 
         } catch (error) {
             console.error('Error in registerhim command:', error);
-            const errorMessage = 'An error occurred while registering the player.';
-            if (isSlash) {
-                await message.editReply(errorMessage);
-            } else {
-                await message.reply(errorMessage);
-            }
+            await interaction.editReply('An error occurred while registering the player.');
         }
     }
-}); 
+};
