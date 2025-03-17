@@ -65,6 +65,7 @@ function shouldMergeBattles(battle1, battle2, normalizedEnemyGuilds) {
 class BattleSyncService {
     constructor(client) {
         this.client = client;
+        this.clientId = client?.user?.id;
     }
 
     async syncRecentBattles() {
@@ -74,6 +75,11 @@ class BattleSyncService {
             battlesRegistered: 0,
             errors: 0
         };
+
+        if (!this.client || !this.clientId) {
+            logger.error('Client not properly initialized');
+            return results;
+        }
 
         try {
             // Get all guilds with battle sync enabled
@@ -218,7 +224,7 @@ class BattleSyncService {
                                                     const validDeaths = parseInt(stats.deaths) || 0;
 
                                                     const battleData = {
-                                                        userId: this.client.user.id,
+                                                        userId: this.clientId,
                                                         guildId: guildSettings.guildId,
                                                         battleTime: validBattleTime,
                                                         enemyGuilds: validEnemyGuilds,
