@@ -2,6 +2,9 @@ const Command = require('../../structures/Command');
 const { PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const AlbionItems = require('../../services/AlbionItems');
 const prisma = require('../../config/prisma');
+const CompositionService = require('../../services/CompositionService');
+const { handleError } = require('../../utils/ErrorHandler');
+const { handleAddCommand, handleRemoveCommand, handleFillCommand, handleStatusCommand, handleHelpCommand, handleCloseCommand, handleCancelCommand } = require('./handlers/CompositionHandlers');
 
 // Constants
 const LOOKBACK_DAYS = 30;
@@ -168,7 +171,7 @@ async function checkWeaponExperience(playerName, weaponName) {
         ]);
 
         // Clean up weapon name for comparison (remove "Elder's" prefix)
-        const cleanWeaponName = weaponName.replace("Elder's ", "");
+        const cleanWeaponName = formatWeaponName(weaponName);
 
         // Function to find weapon in stats
         const findWeapon = (stats, name) => {
@@ -202,233 +205,14 @@ async function checkWeaponExperience(playerName, weaponName) {
         };
     } catch (error) {
         console.error('Error checking weapon experience:', error);
-        return { 
-            hasExperience: true,
+        return {
+            hasExperience: false,
+            recentStats: null,
+            allTimeStats: null,
             topRecentWeapons: [],
             topAllTimeWeapons: []
         };
     }
-}
-
-/**
- * Checks if a weapon is full with only regular players
- * @param {Object} weapon - The weapon object to check
- * @returns {boolean} True if weapon is full with regular players
- */
-function isWeaponFullWithRegulars(weapon) {
-    return weapon.participants.size >= weapon.required && 
-           Array.from(weapon.participants).every(id => !weapon.fillPlayers?.has(id));
-}
-
-/**
- * Gets the count of fill players for a weapon
- * @param {Object} weapon - The weapon object to check
- * @returns {number} Number of fill players
- */
-function getFillPlayersCount(weapon) {
-    return Array.from(weapon.participants).filter(id => weapon.fillPlayers?.has(id)).length;
-}
-
-/**
- * Updates an embed with fill queue information
- * @param {EmbedBuilder} embed - The embed to update
- * @param {Object} compositionState - The current composition state
- * @returns {EmbedBuilder} The updated embed
- */
-function updateEmbedWithFillQueue(embed, compositionState) {
-    // Find the last field index
-    let lastFieldIndex = embed.data.fields.length - 1;
-    
-    // Remove existing fill queue if it exists
-    if (embed.data.fields[lastFieldIndex].name === '👥 FILL QUEUE') {
-        embed.spliceFields(lastFieldIndex, 1);
-    }
-
-    // Collect all fill players
-    const fillQueue = new Map(); // Map of userId -> {weapon, character, experience}
-    
-    // Add weapon-specific fill players
-    for (const [name, w] of compositionState.weapons.entries()) {
-        if (w.fillPlayers) {
-            for (const userId of w.fillPlayers) {
-                fillQueue.set(userId, {
-                    weapon: w.name,
-                    character: w.fillCharacters?.get(userId),
-                    experience: null
-                });
-            }
-        }
-    }
-
-    // Add general fill queue players
-    if (compositionState.fillQueue) {
-        for (const [userId, data] of compositionState.fillQueue.entries()) {
-            if (!fillQueue.has(userId)) {
-                fillQueue.set(userId, {
-                    weapon: 'Any Role',
-                    character: data.character,
-                    experience: data.experience
-                });
-            }
-        }
-    }
-
-    // Add fill queue field if there are fill players
-    if (fillQueue.size > 0) {
-        let fillQueueText = '';
-        for (const [userId, data] of fillQueue.entries()) {
-            let playerText = `<@${userId}>`;
-            if (data.character) {
-                playerText += ` - ${data.character}`;
-            }
-            if (data.experience) {
-                playerText += ` |||| ${data.experience}`;
-            }
-            playerText += ` (${data.weapon})`;
-            fillQueueText += `• ${playerText}\n`;
-        }
-        embed.addFields({
-            name: '👥 FILL QUEUE',
-            value: fillQueueText,
-            inline: false
-        });
-    }
-
-    return embed;
-}
-
-/**
- * Handles errors consistently across the command
- * @param {Error} error - The error object
- * @param {Interaction} interaction - The Discord interaction
- * @param {Message} [message] - Optional message object
- */
-async function handleError(error, interaction, message = null) {
-    console.error('Error in pingpvp command:', error);
-    const errorMessage = error.response?.data?.message || error.message || 'There was an error executing this command!';
-    
-    if (interaction.deferred) {
-        await interaction.editReply({ 
-            content: `Error: ${errorMessage}`, 
-            ephemeral: true 
-        });
-    } else if (message) {
-        await message.reply({
-            content: `Error: ${errorMessage}`,
-            ephemeral: true
-        });
-    } else {
-        await interaction.reply({ 
-            content: `Error: ${errorMessage}`, 
-            ephemeral: true 
-        });
-    }
-}
-
-// Add composition validation function
-/**
- * Validates the composition JSON structure
- * @param {Object} composition - The composition object to validate
- * @returns {Object} Validation result with isValid and error message
- */
-function validateComposition(composition) {
-    if (!composition.title || typeof composition.title !== 'string') {
-        return { isValid: false, error: 'Composition must have a title' };
-    }
-
-    if (!composition.parties || !Array.isArray(composition.parties)) {
-        return { isValid: false, error: 'Composition must have a parties array' };
-    }
-
-    if (composition.parties.length === 0) {
-        return { isValid: false, error: 'Composition must have at least one party' };
-    }
-
-    for (const party of composition.parties) {
-        if (!party.name || typeof party.name !== 'string') {
-            return { isValid: false, error: 'Each party must have a name' };
-        }
-
-        if (!party.weapons || !Array.isArray(party.weapons)) {
-            return { isValid: false, error: `Party "${party.name}" must have a weapons array` };
-        }
-
-        if (party.weapons.length === 0) {
-            return { isValid: false, error: `Party "${party.name}" must have at least one weapon` };
-        }
-
-        for (const weapon of party.weapons) {
-            if (!weapon.type || typeof weapon.type !== 'string') {
-                return { isValid: false, error: `Weapon in party "${party.name}" must have a type` };
-            }
-
-            if (typeof weapon.players_required !== 'number' || weapon.players_required < 1) {
-                return { isValid: false, error: `Weapon "${weapon.type}" in party "${party.name}" must have a valid players_required number` };
-            }
-        }
-    }
-
-    return { isValid: true };
-}
-
-// Add thread cleanup function
-/**
- * Cleans up a composition's resources
- * @param {string} threadId - The thread ID to clean up
- */
-function cleanupComposition(threadId) {
-    activeCompositions.delete(threadId);
-}
-
-// Add status update function
-/**
- * Updates the composition status and embed
- * @param {Object} compositionState - The current composition state
- * @param {string} newStatus - The new status to set
- * @param {string} reason - Optional reason for the status change
- */
-async function updateCompositionStatus(compositionState, newStatus, reason = '') {
-    compositionState.status = newStatus;
-    const statusEmoji = {
-        [COMPOSITION_STATUS.OPEN]: '🟢',
-        [COMPOSITION_STATUS.CLOSED]: '🔴',
-        [COMPOSITION_STATUS.CANCELLED]: '⚫'
-    }[newStatus];
-
-    const statusText = {
-        [COMPOSITION_STATUS.OPEN]: 'OPEN',
-        [COMPOSITION_STATUS.CLOSED]: 'CLOSED',
-        [COMPOSITION_STATUS.CANCELLED]: 'CANCELLED'
-    }[newStatus];
-
-    // Update embed title
-    const embed = compositionState.embed;
-    const title = embed.data.title;
-    if (!title.includes(statusEmoji)) {
-        embed.setTitle(`${statusEmoji} ${title}`);
-    }
-
-    // Add status field if it doesn't exist
-    const statusField = embed.data.fields.find(f => f.name === '📊 STATUS');
-    if (!statusField) {
-        embed.addFields({
-            name: '📊 STATUS',
-            value: `${statusEmoji} ${statusText}${reason ? `\n${reason}` : ''}`,
-            inline: false
-        });
-    } else {
-        embed.spliceFields(
-            embed.data.fields.findIndex(f => f.name === '📊 STATUS'),
-            1,
-            {
-                name: '📊 STATUS',
-                value: `${statusEmoji} ${statusText}${reason ? `\n${reason}` : ''}`,
-                inline: false
-            }
-        );
-    }
-
-    await compositionState.originalMessage.edit({ embeds: [embed] });
 }
 
 /**
@@ -439,40 +223,42 @@ async function updateCompositionStatus(compositionState, newStatus, reason = '')
  * @returns {Object} Updated weapon object
  */
 function updateWeaponState(weapon, userId, action) {
-    if (!weapon || typeof weapon !== 'object') {
-        throw new Error('Invalid weapon object');
+    try {
+        // Initialize fill players set if it doesn't exist
+        if (!weapon.fillPlayers) {
+            weapon.fillPlayers = new Set();
+        }
+        if (!weapon.fillCharacters) {
+            weapon.fillCharacters = new Map();
+        }
+
+        switch (action) {
+            case 'add':
+                weapon.participants.add(userId);
+                if (!weapon.isFreeRole) {
+                    weapon.remaining = Math.max(0, weapon.remaining - 1);
+                }
+                break;
+            case 'remove':
+                weapon.participants.delete(userId);
+                if (!weapon.isFreeRole) {
+                    weapon.remaining = Math.min(weapon.required, weapon.remaining + 1);
+                }
+                // Also remove from fill players if they were a fill
+                if (weapon.fillPlayers.has(userId)) {
+                    weapon.fillPlayers.delete(userId);
+                    weapon.fillCharacters.delete(userId);
+                }
+                break;
+            default:
+                throw new Error(`Invalid action: ${action}`);
+        }
+
+        return weapon;
+    } catch (error) {
+        console.error('Error updating weapon state:', error);
+        throw error;
     }
-
-    if (!userId || typeof userId !== 'string') {
-        throw new Error('Invalid user ID');
-    }
-
-    // Initialize required properties if they don't exist
-    weapon.participants = weapon.participants || new Set();
-    weapon.fillPlayers = weapon.fillPlayers || new Set();
-    weapon.fillCharacters = weapon.fillCharacters || new Map();
-    weapon.remaining = typeof weapon.remaining === 'number' ? weapon.remaining : weapon.required;
-
-    switch (action) {
-        case 'add':
-            weapon.participants.add(userId);
-            if (!weapon.isFreeRole) {
-                weapon.remaining = Math.max(0, weapon.remaining - 1);
-            }
-            break;
-        case 'remove':
-            weapon.participants.delete(userId);
-            weapon.fillPlayers.delete(userId);
-            weapon.fillCharacters.delete(userId);
-            if (!weapon.isFreeRole) {
-                weapon.remaining = Math.min(weapon.required, weapon.remaining + 1);
-            }
-            break;
-        default:
-            throw new Error('Invalid action');
-    }
-
-    return weapon;
 }
 
 /**
@@ -481,31 +267,129 @@ function updateWeaponState(weapon, userId, action) {
  * @returns {string} Formatted weapon name
  */
 function formatWeaponName(weaponName) {
-    // Remove "Elder's" prefix
-    let name = weaponName.replace("Elder's ", "");
-    
-    // Remove "Staff" suffix
-    name = name.replace(" Staff", "");
-    
-    // Handle two-word weapons
-    const words = name.split(' ');
-    if (words.length === 2) {
-        // Abbreviate first word if it's longer than 4 characters
-        if (words[0].length > 4) {
-            return `${words[0][0]}. ${words[1]}`;
+    try {
+        // Handle null or undefined
+        if (!weaponName) {
+            return '';
         }
+
+        // Remove "Elder's" prefix
+        let formattedName = weaponName.replace(/^Elder's\s+/i, '');
+
+        // Handle special cases
+        const specialCases = {
+            'Quarterstaff': 'QStaff',
+            'Great Holy Staff': 'GHoly',
+            'Divine Staff': 'Divine',
+            'Fallen Staff': 'Fallen',
+            'Great Nature Staff': 'GNature',
+            'Wild Staff': 'Wild',
+            'Great Fire Staff': 'GFire',
+            'Infernal Staff': 'Infernal',
+            'Great Arcane Staff': 'GArcane',
+            'Enigmatic Staff': 'Enigmatic',
+            'Great Frost Staff': 'GFrost',
+            'Glacial Staff': 'Glacial',
+            'Great Cursed Staff': 'GCursed',
+            'Demonic Staff': 'Demonic'
+        };
+
+        // Check for special cases first
+        for (const [full, short] of Object.entries(specialCases)) {
+            if (formattedName.toLowerCase().includes(full.toLowerCase())) {
+                return short;
+            }
+        }
+
+        // If no special case, return as is
+        return formattedName;
+    } catch (error) {
+        console.error('Error formatting weapon name:', error);
+        return weaponName; // Return original name if error
     }
-    
-    return name;
+}
+
+/**
+ * Validates the composition JSON structure
+ * @param {Object} composition - The composition object to validate
+ * @returns {Object} Validation result with isValid and error message
+ */
+function validateComposition(composition) {
+    try {
+        // Check if composition has required fields
+        if (!composition.title) {
+            return { isValid: false, error: 'Missing title field' };
+        }
+
+        if (!composition.parties || !Array.isArray(composition.parties)) {
+            return { isValid: false, error: 'Missing or invalid parties array' };
+        }
+
+        // Validate each party
+        for (const party of composition.parties) {
+            if (!party.name) {
+                return { isValid: false, error: 'Party missing name field' };
+            }
+
+            if (!party.weapons || !Array.isArray(party.weapons)) {
+                return { isValid: false, error: `Party "${party.name}" missing weapons array` };
+            }
+
+            // Validate each weapon in the party
+            for (const weapon of party.weapons) {
+                if (!weapon.type) {
+                    return { isValid: false, error: `Weapon in party "${party.name}" missing type field` };
+                }
+
+                if (!weapon.players_required || typeof weapon.players_required !== 'number' || weapon.players_required < 1) {
+                    return { isValid: false, error: `Invalid players_required for weapon "${weapon.type}" in party "${party.name}"` };
+                }
+            }
+        }
+
+        return { isValid: true, error: null };
+    } catch (error) {
+        console.error('Error validating composition:', error);
+        return { isValid: false, error: 'Internal validation error' };
+    }
+}
+
+/**
+ * Cleans up a composition's resources
+ * @param {string} threadId - The thread ID to clean up
+ */
+function cleanupComposition(threadId) {
+    try {
+        activeCompositions.delete(threadId);
+    } catch (error) {
+        console.error('Error cleaning up composition:', error);
+    }
 }
 
 module.exports = new Command({
     name: 'pingpvp',
     description: 'Pings a role with a PVP event message using a composition template',
     category: 'albion',
-    usage: '<role> <template>',
-    cooldown: 10,
-    permissions: [PermissionFlagsBits.MentionEveryone],
+    options: [
+        {
+            name: 'role',
+            description: 'The role to ping for the event',
+            type: 8, // ROLE
+            required: true
+        },
+        {
+            name: 'template',
+            description: 'A JSON file containing the composition template',
+            type: 11, // ATTACHMENT
+            required: false
+        },
+        {
+            name: 'json',
+            description: 'Direct JSON input for the composition template',
+            type: 3, // STRING
+            required: false
+        }
+    ],
     async execute(interaction, args, handler) {
         try {
             // Initialize items service if not already done
@@ -909,837 +793,56 @@ module.exports = new Command({
                     });
 
                     try {
+                        const compositionState = activeCompositions.get(thread.id);
+                        if (!compositionState) {
+                            console.error('Composition state not found for thread:', thread.id);
+                            return;
+                        }
+
+                        // Parse command
                         const content = message.content.substring(3).trim().toLowerCase();
-                        
-                        // Add debug logging for command parsing
-                        console.log('Command parsed:', {
-                            originalContent: message.content,
-                            parsedContent: content,
-                            threadId: thread.id
-                        });
+                        const args = content.split(' ');
+                        const command = args[0];
 
-                        // Handle admin force-add command
-                        if (content.includes('@')) {
-                            const member = await message.guild.members.fetch(message.author.id);
-                            const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
-                            const isEventCreator = message.author.id === interaction.user.id;
-
-                            if (!isAdmin && !isEventCreator) {
-                                await message.reply({
-                                    content: 'Only administrators or event creator can use this command.',
-                                    ephemeral: true
-                                });
-                                return;
-                            }
-
-                            // Split the command into weapon name and user mention
-                            const parts = content.split(' ');
-                            const mentionedUser = message.mentions.users.first();
-
-                            if (!mentionedUser) {
-                                await message.reply({
-                                    content: 'Please mention a user to add to the weapon.',
-                                    ephemeral: true
-                                });
-                                return;
-                            }
-
-                            // Get weapon name by removing the mention from the content
-                            const weaponName = content.replace(`<@${mentionedUser.id}>`, '').trim().toLowerCase();
-
-                            const weapon = compositionState.weapons.get(weaponName);
-                            if (!weapon) {
-                                await message.reply({
-                                    content: 'Invalid weapon name. Please use one of the available weapons.',
-                                    ephemeral: true
-                                });
-                                return;
-                            }
-
-                            const userId = mentionedUser.id;
-
-                            // Check if user is already participating
-                            let userPreviousWeapon = null;
-                            for (const [name, w] of compositionState.weapons.entries()) {
-                                if (w.participants.has(userId)) {
-                                    userPreviousWeapon = name;
-                                    break;
-                                }
-                            }
-
-                            // Check if user is in fill queue
-                            const isInFillQueue = compositionState.fillQueue?.has(userId);
-                            if (isInFillQueue) {
-                                compositionState.fillQueue.delete(userId);
-                            }
-
-                            if (userPreviousWeapon) {
-                                // Remove from previous weapon
-                                const prevWeapon = compositionState.weapons.get(userPreviousWeapon);
-                                prevWeapon.participants.delete(userId);
-                                prevWeapon.remaining = Math.min(prevWeapon.required, prevWeapon.remaining + 1);
-                                
-                                // Remove from previous weapon's fill players if they were a fill
-                                if (prevWeapon.fillPlayers?.has(userId)) {
-                                    prevWeapon.fillPlayers.delete(userId);
-                                    prevWeapon.fillCharacters.delete(userId);
-                                }
-                            }
-
-                            // Add player to weapon
-                            weapon.participants.add(userId);
-                            
-                            // Only decrease remaining count for non-free roles
-                            if (!weapon.isFreeRole) {
-                                weapon.remaining--;
-                                compositionState.remainingTotal--;
-                            }
-
-                            // Update the embed
-                            const updatedEmbed = new EmbedBuilder(embed.toJSON());
-                            let fieldIndex = 0;
-                            let currentParty = null;
-
-                            // First, find all party header indices
-                            const partyHeaderIndices = [];
-                            updatedEmbed.data.fields.forEach((field, index) => {
-                                if (field.name.startsWith('🎯')) {
-                                    partyHeaderIndices.push(index);
-                                }
-                            });
-
-                            // Group weapons by party
-                            const weaponsByParty = new Map();
-                            for (const [name, w] of compositionState.weapons.entries()) {
-                                if (!weaponsByParty.has(w.partyName)) {
-                                    weaponsByParty.set(w.partyName, []);
-                                }
-                                weaponsByParty.get(w.partyName).push({ name, weapon: w });
-                            }
-
-                            // Update fields for each party
-                            for (const [partyName, weapons] of weaponsByParty.entries()) {
-                                // Find the party header index
-                                const partyHeaderIndex = partyHeaderIndices.find(index => 
-                                    updatedEmbed.data.fields[index].name === `🎯 ${partyName.toUpperCase()}`
-                                );
-
-                                if (partyHeaderIndex !== -1) {
-                                    fieldIndex = partyHeaderIndex + 1; // Start after the party header
-
-                                    // Sort weapons by their original position
-                                    weapons.sort((a, b) => a.weapon.position - b.weapon.position);
-
-                                    // Update each weapon field
-                                    for (const { name, weapon } of weapons) {
-                                        const participantsList = Array.from(weapon.participants)
-                                            .map(id => {
-                                                const isFill = weapon.fillPlayers?.has(id);
-                                                return `<@${id}>${isFill ? ' (fill)' : ''}`;
-                                            })
-                                            .join(', ');
-                                        
-                                        const roleText = weapon.isFreeRole ? '🔓 Free Role' : '';
-                                        const formattedName = formatWeaponName(weapon.name);
-                                        updatedEmbed.spliceFields(fieldIndex, 1, {
-                                            name: `${formattedName} 👥${weapon.remaining}/${weapon.required}`,
-                                            value: `${participantsList ? `${participantsList}\n` : ''}\`\`\`gw ${name.toLowerCase()}\`\`\``,
-                                            inline: false
-                                        });
-                                        fieldIndex++;
-                                    }
-
-                                    // Add empty field for spacing between parties if not the last party
-                                    if (partyName !== Array.from(weaponsByParty.keys()).pop()) {
-                                        updatedEmbed.spliceFields(fieldIndex, 1, {
-                                            name: '\u200b',
-                                            value: ' ',
-                                            inline: false
-                                        });
-                                        fieldIndex++;
-                                    }
-                                }
-                            }
-
-                            // Update total count
-                            const totalField = updatedEmbed.data.fields.findIndex(f => f.name === '📊 TOTAL COMPOSITION');
-                            if (totalField !== -1) {
-                                // Calculate actual remaining players
-                                let actualRemaining = compositionState.totalRequired;
-                                let totalFillPlayers = 0;
-                                let totalParticipants = 0;
-
-                                for (const [name, w] of compositionState.weapons.entries()) {
-                                    if (!w.isFreeRole) {
-                                        actualRemaining -= (w.required - w.remaining);
-                                        // Count fill players
-                                        const fillCount = w.fillPlayers ? w.fillPlayers.size : 0;
-                                        totalFillPlayers += fillCount;
-                                        // Count total participants
-                                        totalParticipants += w.participants.size;
-                                    }
-                                }
-                                compositionState.remainingTotal = actualRemaining;
-
-                                // Calculate fill percentage
-                                const fillPercentage = totalParticipants > 0 
-                                    ? Math.round((totalFillPlayers / totalParticipants) * 100) 
-                                    : 0;
-
-                                updatedEmbed.spliceFields(totalField, 1, {
-                                    name: '📊 TOTAL COMPOSITION',
-                                    value: `👥 **Total Players Required:** ${actualRemaining}/${compositionState.totalRequired} ${totalParticipants > 0 ? `📈 ${fillPercentage}% fill` : ''}`,
-                                    inline: false
-                                });
-                            }
-
-                            // Add fill queue section
-                            updateEmbedWithFillQueue(updatedEmbed, compositionState);
-
-                            // Update the original message with the new embed
-                            await sentMessage.edit({ embeds: [updatedEmbed] });
-                            compositionState.embed = updatedEmbed;
-
-                            // Send confirmation message
-                            await message.reply({
-                                content: `${mentionedUser} has been added to ${weapon.name} by an administrator.`,
-                                ephemeral: true
-                            });
+                        // Handle special commands first
+                        if (command === 'fill') {
+                            await handleFillCommand(message, args, compositionState, sentMessage);
+                            return;
+                        }
+                        if (command === 'cancel') {
+                            await handleRemoveCommand(message, args, compositionState, sentMessage);
+                            return;
+                        }
+                        if (command === 'help') {
+                            await handleHelpCommand(message);
+                            return;
+                        }
+                        if (command === 'status' && args[1]) {
+                            await handleStatusCommand(message, args, compositionState, sentMessage, role);
                             return;
                         }
 
-                        // Handle cancel command
-                        if (content.startsWith('cancel')) {
-                            const userId = message.author.id;
-                            const member = await message.guild.members.fetch(userId);
-                            const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
-                            const isEventCreator = userId === interaction.user.id;
-
-                            // Check if admin is trying to cancel someone else
-                            let targetUserId = userId;
-                            if (isAdmin || isEventCreator) {
-                                const mentionedUser = message.mentions.users.first();
-                                if (mentionedUser) {
-                                    targetUserId = mentionedUser.id;
-                                }
-                            }
-
-                            // Find which weapon the target user is in
-                            let userWeapon = null;
-                            for (const [name, w] of compositionState.weapons.entries()) {
-                                if (w.participants.has(targetUserId)) {
-                                    userWeapon = w;
-                                    break;
-                                }
-                            }
-
-                            if (!userWeapon) {
-                                await message.reply({
-                                    content: targetUserId === userId ? 'You are not registered in any weapon.' : 'This user is not registered in any weapon.',
-                                    ephemeral: true
-                                });
-                                return;
-                            }
-
-                            // Remove from weapon
-                            userWeapon.participants.delete(targetUserId);
-                            userWeapon.remaining = Math.min(userWeapon.required, userWeapon.remaining + 1);
-                            
-                            // Remove from fill players if they were a fill
-                            if (userWeapon.fillPlayers?.has(targetUserId)) {
-                                userWeapon.fillPlayers.delete(targetUserId);
-                                userWeapon.fillCharacters.delete(targetUserId);
-                            }
-
-                            // Update total count
-                            compositionState.remainingTotal++;
-
-                            // Update the embed
-                            const updatedEmbed = new EmbedBuilder(embed.toJSON());
-                            let fieldIndex = 0;
-                            let currentParty = null;
-
-                            // First, find all party header indices
-                            const partyHeaderIndices = [];
-                            updatedEmbed.data.fields.forEach((field, index) => {
-                                if (field.name.startsWith('🎯')) {
-                                    partyHeaderIndices.push(index);
-                                }
-                            });
-
-                            // Group weapons by party
-                            const weaponsByParty = new Map();
-                            for (const [name, w] of compositionState.weapons.entries()) {
-                                if (!weaponsByParty.has(w.partyName)) {
-                                    weaponsByParty.set(w.partyName, []);
-                                }
-                                weaponsByParty.get(w.partyName).push({ name, weapon: w });
-                            }
-
-                            // Update fields for each party
-                            for (const [partyName, weapons] of weaponsByParty.entries()) {
-                                // Find the party header index
-                                const partyHeaderIndex = partyHeaderIndices.find(index => 
-                                    updatedEmbed.data.fields[index].name === `🎯 ${partyName.toUpperCase()}`
-                                );
-
-                                if (partyHeaderIndex !== -1) {
-                                    fieldIndex = partyHeaderIndex + 1; // Start after the party header
-
-                                    // Sort weapons by their original position
-                                    weapons.sort((a, b) => a.weapon.position - b.weapon.position);
-
-                                    // Update each weapon field
-                                    for (const { name, weapon } of weapons) {
-                                        const participantsList = Array.from(weapon.participants)
-                                            .map(id => {
-                                                const isFill = weapon.fillPlayers?.has(id);
-                                                return `<@${id}>${isFill ? ' (fill)' : ''}`;
-                                            })
-                                            .join(', ');
-                                        
-                                        const roleText = weapon.isFreeRole ? '🔓 Free Role' : '';
-                                        const formattedName = formatWeaponName(weapon.name);
-                                        updatedEmbed.spliceFields(fieldIndex, 1, {
-                                            name: `${formattedName} 👥${weapon.remaining}/${weapon.required}`,
-                                            value: `${participantsList ? `${participantsList}\n` : ''}\`\`\`gw ${name.toLowerCase()}\`\`\``,
-                                            inline: false
-                                        });
-                                        fieldIndex++;
-                                    }
-
-                                    // Add empty field for spacing between parties if not the last party
-                                    if (partyName !== Array.from(weaponsByParty.keys()).pop()) {
-                                        updatedEmbed.spliceFields(fieldIndex, 1, {
-                                            name: '\u200b',
-                                            value: ' ',
-                                            inline: false
-                                        });
-                                        fieldIndex++;
-                                    }
-                                }
-                            }
-
-                            // Update total count
-                            const totalField = updatedEmbed.data.fields.findIndex(f => f.name === '📊 TOTAL COMPOSITION');
-                            if (totalField !== -1) {
-                                // Calculate actual remaining players
-                                let actualRemaining = compositionState.totalRequired;
-                                for (const [name, w] of compositionState.weapons.entries()) {
-                                    if (!w.isFreeRole) {
-                                        actualRemaining -= (w.required - w.remaining);
-                                    }
-                                }
-                                compositionState.remainingTotal = actualRemaining;
-
-                                updatedEmbed.spliceFields(totalField, 1, {
-                                    name: '📊 TOTAL COMPOSITION',
-                                    value: `👥 **Total Players Required:** ${actualRemaining}/${compositionState.totalRequired}`,
-                                    inline: false
-                                });
-                            }
-
-                            // Add fill queue section
-                            updateEmbedWithFillQueue(updatedEmbed, compositionState);
-
-                            // Update the original message with the new embed
-                            await sentMessage.edit({ embeds: [updatedEmbed] });
-                            compositionState.embed = updatedEmbed;
-
-                            // Send confirmation message
-                            const targetUser = await message.guild.members.fetch(targetUserId);
-                            await message.reply({
-                                content: targetUserId === userId 
-                                    ? `You have been removed from ${userWeapon.name}`
-                                    : `${targetUser} has been removed from ${userWeapon.name}`,
-                                ephemeral: true
-                            });
-                            return;
-                        }
-
-                        // Handle fill queue command
-                        if (content === 'fill') {
-                            const userId = message.author.id;
-
-                            // Check if user is already in fill queue
-                            let isAlreadyFill = false;
-                            for (const [name, w] of compositionState.weapons.entries()) {
-                                if (w.fillPlayers?.has(userId)) {
-                                    isAlreadyFill = true;
-                                    break;
-                                }
-                            }
-
-                            if (isAlreadyFill) {
-                                await message.reply({
-                                    content: 'You are already in the fill queue!',
-                                    ephemeral: true
-                                });
-                                return;
-                            }
-
-                            // Check if user is verified
-                            const verifiedCharacter = await getVerifiedCharacter(message.author.id, message.guild.id);
-                            if (!verifiedCharacter) {
-                                await message.reply({
-                                    content: `You need to register your Albion character first using the \`/register\` command.`,
-                                    ephemeral: true
-                                });
-                                return;
-                            }
-
-                            // Get user's weapon experience
-                            try {
-                                const experience = await checkWeaponExperience(verifiedCharacter, 'any');
-                                
-                                // Create weapon experience text for embed
-                                let weaponExperienceText = '';
-                                const allWeapons = new Map(); // Use Map to track unique weapons
-                                
-                                // Add recent weapons first (they take priority)
-                                if (experience.topRecentWeapons?.length > 0) {
-                                    experience.topRecentWeapons
-                                        .filter(w => w.weapon_name && w.weapon_name.trim() !== '' && w.usages > 0)
-                                        .slice(0, 3)
-                                        .forEach(w => {
-                                            allWeapons.set(w.weapon_name.toLowerCase(), {
-                                                name: w.weapon_name,
-                                                usages: w.usages,
-                                                isRecent: true
-                                            });
-                                        });
-                                }
-                                
-                                // Add all-time weapons and combine usages if weapon exists
-                                if (experience.topAllTimeWeapons?.length > 0) {
-                                    experience.topAllTimeWeapons
-                                        .filter(w => w.weapon_name && w.weapon_name.trim() !== '' && w.usages > 0)
-                                        .slice(0, 3)
-                                        .forEach(w => {
-                                            const existingWeapon = allWeapons.get(w.weapon_name.toLowerCase());
-                                            if (existingWeapon) {
-                                                // If weapon exists, use the all-time usages (total)
-                                                existingWeapon.usages = w.usages;
-                                                existingWeapon.isRecent = false;
-                                            } else {
-                                                // If weapon doesn't exist, add it
-                                                allWeapons.set(w.weapon_name.toLowerCase(), {
-                                                    name: w.weapon_name,
-                                                    usages: w.usages,
-                                                    isRecent: false
-                                                });
-                                            }
-                                        });
-                                }
-
-                                // Convert Map to array and sort by usages
-                                const sortedWeapons = Array.from(allWeapons.values())
-                                    .sort((a, b) => b.usages - a.usages)
-                                    .slice(0, 6); // Take top 6 weapons
-
-                                // Format the weapons text
-                                weaponExperienceText = sortedWeapons
-                                    .map(w => `${w.name} (${w.usages}x)`)
-                                    .join(', ');
-
-                                // Add to fill queue with experience
-                                const fillQueue = compositionState.fillQueue || new Map();
-                                fillQueue.set(userId, {
-                                    character: verifiedCharacter,
-                                    experience: weaponExperienceText
-                                });
-                                compositionState.fillQueue = fillQueue;
-
-                                // Update the embed
-                                const updatedEmbed = new EmbedBuilder(embed.toJSON());
-                                updateEmbedWithFillQueue(updatedEmbed, compositionState);
-
-                                // Update the original message with the new embed
-                                await sentMessage.edit({ embeds: [updatedEmbed] });
-                                compositionState.embed = updatedEmbed;
-
-                                // Send confirmation message
-                                await message.reply({
-                                    content: 'You have been added to the fill queue! You will be considered for any role that needs fill players.',
-                                    ephemeral: true
-                                });
-                                return;
-                            } catch (error) {
-                                console.error('Error checking weapon experience:', error);
-                                await message.reply({
-                                    content: 'There was an error checking your weapon experience. Please try again.',
-                                    ephemeral: true
-                                });
-                                return;
-                            }
-                        }
-
-                        // Check if user has the required role
-                        const member = await message.guild.members.fetch(message.author.id);
-                        if (!member.roles.cache.has(role.id)) {
-                            await message.reply({
-                                content: `You need the ${role} role to join this composition.`,
-                                ephemeral: true
-                            });
-                            return;
-                        }
-
-                        // Check if user is verified
-                        const verifiedCharacter = await getVerifiedCharacter(message.author.id, message.guild.id);
-                        console.log('Verified character result:', {
-                            discordId: message.author.id,
-                            username: message.author.username,
-                            character: verifiedCharacter,
-                            guildId: message.guild.id
-                        });
-
-                        if (!verifiedCharacter) {
-                            await message.reply({
-                                content: `You need to verify or register your Albion character first using the \`/verify\` or \`/register\` command.`,
-                                ephemeral: true
-                            });
-                            return;
-                        }
-
-                        const weaponName = message.content.substring(3).trim().toLowerCase();
+                        // If not a special command, treat it as a weapon name
+                        const weaponName = content;
                         const weapon = compositionState.weapons.get(weaponName);
-
-                        if (!weapon) {
+                        
+                        if (weapon) {
+                            await handleAddCommand(message, [weaponName], compositionState, sentMessage, checkWeaponExperience);
+                        } else {
                             await message.reply({
-                                content: 'Invalid weapon name. Please use one of the available weapons.',
+                                content: 'Invalid weapon name. Use `gw help` for available commands.',
                                 ephemeral: true
                             });
-                            return;
-                        }
-
-                        const userId = message.author.id;
-
-                        // Check if user is already participating
-                        let userPreviousWeapon = null;
-                        for (const [name, w] of compositionState.weapons.entries()) {
-                            if (w.participants.has(userId)) {
-                                userPreviousWeapon = name;
-                                break;
-                            }
-                        }
-
-                        // Check if user is in fill queue
-                        const isInFillQueue = compositionState.fillQueue?.has(userId);
-                        if (isInFillQueue) {
-                            compositionState.fillQueue.delete(userId);
-                        }
-
-                        if (userPreviousWeapon) {
-                            // Remove from previous weapon
-                            const prevWeapon = compositionState.weapons.get(userPreviousWeapon);
-                            prevWeapon.participants.delete(userId);
-                            prevWeapon.remaining = Math.min(prevWeapon.required, prevWeapon.remaining + 1);
-                            
-                            // Remove from previous weapon's fill players if they were a fill
-                            if (prevWeapon.fillPlayers?.has(userId)) {
-                                prevWeapon.fillPlayers.delete(userId);
-                                prevWeapon.fillCharacters.delete(userId);
-                            }
-                            
-                            // Send feedback message
-                            await message.reply({
-                                content: `You were moved from ${prevWeapon.name} to ${weapon.name}`,
-                                ephemeral: true
-                            });
-                        }
-
-                        // Skip experience check for free roles
-                        let experience = null;
-                        if (!weapon.isFreeRole) {
-                            try {
-                                experience = await checkWeaponExperience(verifiedCharacter, weapon.name);
-                                
-                                if (!experience.hasExperience) {
-                                    let responseMessage = `⚠️ Warning: You don't have recent experience with ${weapon.name}.\n\n`;
-                                    
-                                    // Add recent weapons experience
-                                    if (experience.topRecentWeapons?.filter(w => w.weapon_name && w.weapon_name.trim() !== '' && w.usages > 0).length > 0) {
-                                        responseMessage += '**Your Recent Weapons (Last 30 days):**\n';
-                                        experience.topRecentWeapons
-                                            .filter(w => w.weapon_name && w.weapon_name.trim() !== '' && w.usages > 0)
-                                            .forEach(w => {
-                                                responseMessage += `• ${w.weapon_name}: ${w.usages} uses\n`;
-                                            });
-                                        responseMessage += '\n';
-                                    } else {
-                                        responseMessage += '**No Recent PvP Activity (Last 30 days)**\n\n';
-                                    }
-
-                                    // Add all-time weapons experience
-                                    if (experience.topAllTimeWeapons?.filter(w => w.weapon_name && w.weapon_name.trim() !== '' && w.usages > 0).length > 0) {
-                                        responseMessage += '**Your All-Time Top Weapons:**\n';
-                                        experience.topAllTimeWeapons
-                                            .filter(w => w.weapon_name && w.weapon_name.trim() !== '' && w.usages > 0)
-                                            .forEach(w => {
-                                                responseMessage += `• ${w.weapon_name}: ${w.usages} uses\n`;
-                                            });
-                                        responseMessage += '\n';
-                                    } else {
-                                        responseMessage += '**No All-Time PvP Records Found**\n\n';
-                                    }
-                                    
-                                    responseMessage += 'You will be marked as a fill player.';
-                                    
-                                    await message.reply({
-                                        content: responseMessage,
-                                        ephemeral: true
-                                    });
-                                }
-                            } catch (error) {
-                                console.error('Error checking weapon experience:', error);
-                                await message.reply({
-                                    content: 'There was an error checking your weapon experience. Please try again.',
-                                    ephemeral: true
-                                });
-                                return;
-                            }
-                        }
-
-                        // Add to new weapon if spots available or it's a free role
-                        if (weapon.remaining > 0 || weapon.isFreeRole) {
-                            // Initialize fill players set if it doesn't exist
-                            if (!weapon.fillPlayers) {
-                                weapon.fillPlayers = new Set();
-                                weapon.fillCharacters = new Map();
-                            }
-
-                            // Check if weapon is full with regular players (skip for free roles)
-                            if (!weapon.isFreeRole && isWeaponFullWithRegulars(weapon)) {
-                                await message.reply({
-                                    content: `This weapon is full with regular players.`,
-                                    ephemeral: true
-                                });
-                                return;
-                            }
-
-                            // If weapon is full but has fill players, check experience (skip for free roles)
-                            if (!weapon.isFreeRole && weapon.participants.size >= weapon.required) {
-                                try {
-                                    experience = await checkWeaponExperience(verifiedCharacter, weapon.name);
-                                    
-                                    if (experience.hasExperience) {
-                                        // Remove a fill player and add the experienced player
-                                        const fillPlayers = Array.from(weapon.participants)
-                                            .filter(id => weapon.fillPlayers.has(id));
-                                        
-                                        if (fillPlayers.length > 0) {
-                                            const removedFillPlayer = fillPlayers[0];
-                                            weapon.participants.delete(removedFillPlayer);
-                                            // Don't remove from fillPlayers or fillCharacters
-                                            // This way they stay in the fill queue even if removed from the weapon
-                                            
-                                            // Send message to removed fill player
-                                            try {
-                                                // Get removed player's experience
-                                                const removedPlayerCharacter = weapon.fillCharacters.get(removedFillPlayer);
-                                                if (removedPlayerCharacter) {
-                                                    const experience = await checkWeaponExperience(removedPlayerCharacter, 'any');
-                                                    
-                                                    // Create weapon experience message
-                                                    let experienceMessage = '';
-                                                    if (experience.topRecentWeapons?.length > 0 || experience.topAllTimeWeapons?.length > 0) {
-                                                        experienceMessage = '\n\n**Your Weapon Experience:**\n';
-                                                        
-                                                        // Add recent weapons (up to 3)
-                                                        if (experience.topRecentWeapons?.length > 0) {
-                                                            experienceMessage += '**Recent (30 days):**\n';
-                                                            experience.topRecentWeapons.slice(0, 3).forEach(w => {
-                                                                experienceMessage += `• ${w.weapon_name}: ${w.usages} uses\n`;
-                                                            });
-                                                        }
-                                                        
-                                                        // Add all-time weapons (up to 3)
-                                                        if (experience.topAllTimeWeapons?.length > 0) {
-                                                            experienceMessage += '**All-Time:**\n';
-                                                            experience.topAllTimeWeapons.slice(0, 3).forEach(w => {
-                                                                experienceMessage += `• ${w.weapon_name}: ${w.usages} uses\n`;
-                                                            });
-                                                        }
-                                                    }
-
-                                                    await message.channel.send({
-                                                        content: `<@${removedFillPlayer}> You have been moved to the fill queue as a more experienced player has joined.${experienceMessage}`,
-                                                        ephemeral: true
-                                                    });
-                                                }
-                                            } catch (error) {
-                                                console.error('Error sending fill queue message:', error);
-                                            }
-                                        }
-                                    } else {
-                                        // Add to fill queue
-                                        weapon.fillPlayers.add(userId);
-                                        weapon.fillCharacters.set(userId, verifiedCharacter);
-                                        await message.reply({
-                                            content: `This weapon is full. You have been added to the fill queue.`,
-                                            ephemeral: true
-                                        });
-                                        return;
-                                    }
-                                } catch (error) {
-                                    console.error('Error checking weapon experience:', error);
-                                    await message.reply({
-                                        content: 'There was an error checking your weapon experience. Please try again.',
-                                        ephemeral: true
-                                    });
-                                    return;
-                                }
-                            }
-
-                            // Add player to weapon
-                            weapon.participants.add(userId);
-                            
-                            // Add to fill players if they don't have experience (skip for free roles)
-                            if (!weapon.isFreeRole && experience && !experience.hasExperience) {
-                                weapon.fillPlayers.add(userId);
-                                weapon.fillCharacters.set(userId, verifiedCharacter);
-                            }
-
-                            // Only decrease remaining count for non-free roles
-                            if (!weapon.isFreeRole) {
-                                weapon.remaining--;
-                                compositionState.remainingTotal--;
-                            }
-
-                            if (!userPreviousWeapon) {
-                                // Send feedback message for new assignment
-                                await message.reply({
-                                    content: `You joined as ${weapon.name}`,
-                                    ephemeral: true
-                                });
-                            }
-
-                            // Update the embed
-                            const updatedEmbed = new EmbedBuilder(embed.toJSON());
-                            let fieldIndex = 0;
-                            let currentParty = null;
-
-                            // First, find all party header indices
-                            const partyHeaderIndices = [];
-                            updatedEmbed.data.fields.forEach((field, index) => {
-                                if (field.name.startsWith('🎯')) {
-                                    partyHeaderIndices.push(index);
-                                }
-                            });
-
-                            // Group weapons by party
-                            const weaponsByParty = new Map();
-                            for (const [name, w] of compositionState.weapons.entries()) {
-                                if (!weaponsByParty.has(w.partyName)) {
-                                    weaponsByParty.set(w.partyName, []);
-                                }
-                                weaponsByParty.get(w.partyName).push({ name, weapon: w });
-                            }
-
-                            // Update fields for each party
-                            for (const [partyName, weapons] of weaponsByParty.entries()) {
-                                // Find the party header index
-                                const partyHeaderIndex = partyHeaderIndices.find(index => 
-                                    updatedEmbed.data.fields[index].name === `🎯 ${partyName.toUpperCase()}`
-                                );
-
-                                if (partyHeaderIndex !== -1) {
-                                    fieldIndex = partyHeaderIndex + 1; // Start after the party header
-
-                                    // Sort weapons by their original position
-                                    weapons.sort((a, b) => a.weapon.position - b.weapon.position);
-
-                                    // Update each weapon field
-                                    for (const { name, weapon } of weapons) {
-                                        const participantsList = Array.from(weapon.participants)
-                                            .map(id => {
-                                                const isFill = weapon.fillPlayers?.has(id);
-                                                return `<@${id}>${isFill ? ' (fill)' : ''}`;
-                                            })
-                                            .join(', ');
-                                        
-                                        const roleText = weapon.isFreeRole ? '🔓 Free Role' : '';
-                                        const formattedName = formatWeaponName(weapon.name);
-                                        updatedEmbed.spliceFields(fieldIndex, 1, {
-                                            name: `${formattedName} 👥${weapon.remaining}/${weapon.required}`,
-                                            value: `${participantsList ? `${participantsList}\n` : ''}\`\`\`gw ${name.toLowerCase()}\`\`\``,
-                                            inline: false
-                                        });
-                                        fieldIndex++;
-                                    }
-
-                                    // Add empty field for spacing between parties if not the last party
-                                    if (partyName !== Array.from(weaponsByParty.keys()).pop()) {
-                                        updatedEmbed.spliceFields(fieldIndex, 1, {
-                                            name: '\u200b',
-                                            value: ' ',
-                                            inline: false
-                                        });
-                                        fieldIndex++;
-                                    }
-                                }
-                            }
-
-                            // Update total count
-                            const totalField = updatedEmbed.data.fields.findIndex(f => f.name === '📊 TOTAL COMPOSITION');
-                            if (totalField !== -1) {
-                                // Calculate actual remaining players
-                                let actualRemaining = compositionState.totalRequired;
-                                let totalFillPlayers = 0;
-                                let totalParticipants = 0;
-
-                                for (const [name, w] of compositionState.weapons.entries()) {
-                                    if (!w.isFreeRole) {
-                                        actualRemaining -= (w.required - w.remaining);
-                                        // Count fill players
-                                        const fillCount = w.fillPlayers ? w.fillPlayers.size : 0;
-                                        totalFillPlayers += fillCount;
-                                        // Count total participants
-                                        totalParticipants += w.participants.size;
-                                    }
-                                }
-                                compositionState.remainingTotal = actualRemaining;
-
-                                // Calculate fill percentage
-                                const fillPercentage = totalParticipants > 0 
-                                    ? Math.round((totalFillPlayers / totalParticipants) * 100) 
-                                    : 0;
-
-                                updatedEmbed.spliceFields(totalField, 1, {
-                                    name: '📊 TOTAL COMPOSITION',
-                                    value: `👥 **Total Players Required:** ${actualRemaining}/${compositionState.totalRequired} ${totalParticipants > 0 ? `📈 ${fillPercentage}% fill` : ''}`,
-                                    inline: false
-                                });
-                            }
-
-                            // Add fill queue section
-                            updateEmbedWithFillQueue(updatedEmbed, compositionState);
-
-                            // Update the original message with the new embed
-                            await sentMessage.edit({ embeds: [updatedEmbed] });
-                            compositionState.embed = updatedEmbed;
-
-                            // Send a confirmation message that's only visible to the user
-                            await message.reply({ 
-                                content: 'Composition updated!',
-                                ephemeral: true 
-                            });
-                            return;
                         }
                     } catch (error) {
-                        console.error('Error handling message:', error);
-                        await message.reply({
-                            content: 'There was an error handling your message. Please try again later.',
-                            ephemeral: true
-                        });
+                        await handleError(error, null, message);
                     }
                 });
+
             } catch (error) {
-                console.error('Error executing command:', error);
                 await handleError(error, interaction);
             }
         } catch (error) {
-            console.error('Error executing command:', error);
             await handleError(error, interaction);
         }
     }
