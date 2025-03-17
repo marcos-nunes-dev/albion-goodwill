@@ -206,26 +206,56 @@ class BattleSyncService {
 
                                             if (!existingBattle) {
                                                 logger.info(`Battle ${battle.albionId} - Attempting to register (New battle)`);
-                                                // Register the battle
-                                                await prisma.battleRegistration.create({
-                                                    data: {
+                                                try {
+                                                    // Ensure battleTime is a valid Date
+                                                    const validBattleTime = new Date(battleTime);
+                                                    
+                                                    // Ensure enemyGuilds is an array
+                                                    const validEnemyGuilds = Array.isArray(enemyGuilds) ? enemyGuilds : [];
+                                                    
+                                                    // Ensure numeric values
+                                                    const validKills = parseInt(stats.kills) || 0;
+                                                    const validDeaths = parseInt(stats.deaths) || 0;
+
+                                                    const battleData = {
                                                         userId: this.client.user.id,
                                                         guildId: guildSettings.guildId,
-                                                        battleTime: battleTime,
-                                                        enemyGuilds: enemyGuilds,
-                                                        isVictory: stats.kills > stats.deaths,
-                                                        kills: stats.kills,
-                                                        deaths: stats.deaths,
+                                                        battleTime: validBattleTime,
+                                                        enemyGuilds: validEnemyGuilds,
+                                                        isVictory: validKills > validDeaths,
+                                                        kills: validKills,
+                                                        deaths: validDeaths,
                                                         battleUrl: battleUrl
-                                                    }
-                                                });
-                                                results.battlesRegistered++;
-                                                logger.info(`Battle ${battle.albionId} - Successfully registered! K:${stats.kills}/D:${stats.deaths} - Victory: ${stats.kills > stats.deaths}`);
+                                                    };
+
+                                                    logger.info(`Battle ${battle.albionId} - Registration data:`, battleData);
+
+                                                    // Register the battle
+                                                    await prisma.battleRegistration.create({
+                                                        data: battleData
+                                                    });
+                                                    
+                                                    results.battlesRegistered++;
+                                                    logger.info(`Battle ${battle.albionId} - Successfully registered! K:${validKills}/D:${validDeaths} - Victory: ${validKills > validDeaths}`);
+                                                } catch (registrationError) {
+                                                    logger.error(`Battle ${battle.albionId} - Error registering:`, {
+                                                        error: registrationError.message,
+                                                        stack: registrationError.stack,
+                                                        data: {
+                                                            guildId: guildSettings.guildId,
+                                                            battleTime,
+                                                            enemyGuilds,
+                                                            kills: stats.kills,
+                                                            deaths: stats.deaths
+                                                        }
+                                                    });
+                                                    results.errors++;
+                                                }
                                             } else {
                                                 logger.info(`Battle ${battle.albionId} - Already registered, skipping`);
                                             }
                                         } catch (error) {
-                                            logger.error(`Battle ${battle.albionId} - Error registering:`, error.message, error.stack);
+                                            logger.error(`Battle ${battle.albionId} - Error checking registration:`, error.message, error.stack);
                                             results.errors++;
                                         }
                                     } else {
