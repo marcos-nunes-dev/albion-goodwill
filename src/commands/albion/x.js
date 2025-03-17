@@ -18,6 +18,9 @@ module.exports = new Command({
         }
     ],
     async execute(interaction) {
+        // Defer the reply immediately to prevent timeout
+        await interaction.deferReply({ ephemeral: true });
+        
         try {
             // Debug: Log user and guild information
             console.log('Registration Check - Input Parameters:', {
@@ -47,17 +50,15 @@ module.exports = new Command({
 
             if (!registration) {
                 console.log('Registration Check - Failed: User not registered');
-                return interaction.reply({
+                return interaction.editReply({
                     content: 'You need to register with /register first.',
-                    ephemeral: true
                 });
             }
 
             // Check if command is used in a thread
             if (!interaction.channel.isThread()) {
-                return interaction.reply({
+                return interaction.editReply({
                     content: 'This command can only be used in a composition thread.',
-                    ephemeral: true
                 });
             }
 
@@ -70,9 +71,8 @@ module.exports = new Command({
             });
 
             if (!composition) {
-                return interaction.reply({
+                return interaction.editReply({
                     content: 'Could not find an open composition in this thread.',
-                    ephemeral: true
                 });
             }
 
@@ -85,9 +85,8 @@ module.exports = new Command({
             
             // Check if user has the required role or is an admin
             if (!isAdmin && !member.roles.cache.has(role.id)) {
-                return interaction.reply({
+                return interaction.editReply({
                     content: `You need the ${role.name} role to use this command.`,
-                    ephemeral: true
                 });
             }
 
@@ -99,9 +98,8 @@ module.exports = new Command({
                 const hasPermission = member.permissions.has(PermissionFlagsBits.Administrator);
                 
                 if (!hasPermission) {
-                    return interaction.reply({
+                    return interaction.editReply({
                         content: 'Only administrators can ping weapons for other users.',
-                        ephemeral: true
                     });
                 }
 
@@ -114,9 +112,8 @@ module.exports = new Command({
                 });
 
                 if (!targetRegistration) {
-                    return interaction.reply({
+                    return interaction.editReply({
                         content: `${targetUser.tag} is not registered. They need to register with /register first.`,
-                        ephemeral: true
                     });
                 }
             }
@@ -152,9 +149,8 @@ module.exports = new Command({
             );
 
             if (options.length === 0) {
-                return interaction.reply({
+                return interaction.editReply({
                     content: 'No available weapons found in the composition.',
-                    ephemeral: true
                 });
             }
 
@@ -180,18 +176,22 @@ module.exports = new Command({
                 ? `Select a weapon to ping for ${targetUser}:`
                 : 'Select a weapon to ping:';
 
-            await interaction.reply({
+            await interaction.editReply({
                 content: replyContent,
                 components: [row],
-                ephemeral: true
             });
 
         } catch (error) {
             console.error('Error in x command:', error);
-            return interaction.reply({
-                content: 'An error occurred while processing the command.',
-                ephemeral: true
-            });
+            try {
+                // If the interaction is still valid, edit the deferred reply
+                await interaction.editReply({
+                    content: 'An error occurred while processing the command.',
+                });
+            } catch (followUpError) {
+                // If we can't edit the reply, log the error but don't try to respond
+                console.error('Error sending error message:', followUpError);
+            }
         }
     }
 });
