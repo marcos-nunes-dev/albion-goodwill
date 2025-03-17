@@ -134,7 +134,7 @@ async function updateBattleLogChannelName(guild, channelId) {
                 }
             },
             orderBy: {
-                battleTime: 'desc'
+                battleTime: 'asc'
             }
         });
 
