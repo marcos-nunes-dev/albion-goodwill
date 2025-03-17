@@ -129,12 +129,12 @@ class VoiceTracker {
       // Add to cache
       this.sessionCache.set(userId, newSession);
 
-      console.log(`Created new session for ${username}:`, {
-        channelId: state.channelId,
-        isAFK,
-        isMuted: state.selfMute,
-        isDeafened: state.selfDeaf
-      });
+      // Created new session for ${username}:, {
+      //   channelId: state.channelId,
+      //   isAFK,
+      //   isMuted: state.selfMute,
+      //   isDeafened: state.selfDeaf
+      // });
     } catch (error) {
       console.error('Voice join error:', error.message);
       // Try to recover the session
@@ -203,14 +203,14 @@ class VoiceTracker {
 
     const isLongAFK = isAfk && duration >= this.AFK_TIMEOUT;
 
-    console.log(`Updating activity stats for ${username} (${userId}):`, {
-      duration,
-      isAfk,
-      isLongAFK,
-      isMutedOrDeafened,
-      guildId,
-      date: today
-    });
+    // Updating activity stats for ${username} (${userId}):, {
+    //   duration,
+    //   isAfk,
+    //   isLongAFK,
+    //   isMutedOrDeafened,
+    //   guildId,
+    //   date: today
+    // });
 
     try {
       // Get existing record for today
@@ -255,11 +255,11 @@ class VoiceTracker {
           }
         });
 
-        console.log(`Updated existing activity stats for ${username}:`, {
-          voiceTime: result.voiceTimeSeconds,
-          afkTime: result.afkTimeSeconds,
-          mutedTime: result.mutedDeafenedTimeSeconds
-        });
+        // Updated existing activity stats for ${username}:, {
+        //   voiceTime: result.voiceTimeSeconds,
+        //   afkTime: result.afkTimeSeconds,
+        //   mutedTime: result.mutedDeafenedTimeSeconds
+        // });
       } else {
         // Create new record
         const result = await this.prisma.dailyActivity.create({
@@ -274,11 +274,11 @@ class VoiceTracker {
           }
         });
 
-        console.log(`Created new activity stats for ${username}:`, {
-          voiceTime: result.voiceTimeSeconds,
-          afkTime: result.afkTimeSeconds,
-          mutedTime: result.mutedDeafenedTimeSeconds
-        });
+        // Created new activity stats for ${username}:, {
+        //   voiceTime: result.voiceTimeSeconds,
+        //   afkTime: result.afkTimeSeconds,
+        //   mutedTime: result.mutedDeafenedTimeSeconds
+        // });
       }
     } catch (error) {
       console.error(`Failed to update activity stats for ${username}:`, error);
@@ -376,10 +376,10 @@ class VoiceTracker {
   formatStats(period, stats) {
     return [
       `**${period} Activity:**`,
-      `🎤 Active Voice Time: ${formatDuration(stats.voiceTimeSeconds)}`,
-      `💬 Messages Sent: ${stats.messageCount}`,
-      stats.afkTimeSeconds > 0 ? `💤 AFK Time: ${formatDuration(stats.afkTimeSeconds)}` : null,
-      stats.mutedDeafenedTimeSeconds > 0 ? `🔇 Muted Time: ${formatDuration(stats.mutedDeafenedTimeSeconds)}` : null
+      ` Active Voice Time: ${formatDuration(stats.voiceTimeSeconds)}`,
+      ` Messages Sent: ${stats.messageCount}`,
+      stats.afkTimeSeconds > 0 ? ` AFK Time: ${formatDuration(stats.afkTimeSeconds)}` : null,
+      stats.mutedDeafenedTimeSeconds > 0 ? ` Muted Time: ${formatDuration(stats.mutedDeafenedTimeSeconds)}` : null
     ].filter(Boolean).join('\n');
   }
 
