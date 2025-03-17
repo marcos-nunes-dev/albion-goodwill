@@ -124,19 +124,9 @@ class BattleSyncService {
 
                     const guildName = guildResponse.data[0].guildName;
                     
-                    // Get the timestamp of the last registered battle
-                    const lastBattle = await prisma.battleRegistration.findFirst({
-                        where: { guildId: guildSettings.guildId },
-                        orderBy: { battleTime: 'desc' }
-                    });
-
-                    const lastBattleTime = lastBattle ? new Date(lastBattle.battleTime) : null;
-                    const sevenDaysAgo = new Date();
-                    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-                    
                     let page = 1;
-                    let shouldContinue = true;
                     let processedBattles = new Set();
+                    let shouldContinue = true;
 
                     while (shouldContinue) {
                         // Get battles from API
@@ -154,14 +144,6 @@ class BattleSyncService {
                         for (const battle of battles) {
                             const battleTime = new Date(battle.startedAt);
                             
-                            // Strict time boundary check
-                            if (!isBattleWithinTimeBounds(battleTime, lastBattleTime, sevenDaysAgo)) {
-                                shouldContinue = false;
-                                break;
-                            }
-
-                            foundCurrentPageBattle = true;
-
                             // Skip if already processed
                             if (processedBattles.has(battle.albionId)) {
                                 continue;
@@ -174,31 +156,11 @@ class BattleSyncService {
                             }
 
                             processedBattles.add(battle.albionId);
-
-                            // Get enemy guilds
-                            const enemyGuilds = battle.guilds
-                                .filter(g => g.name !== guildName)
-                                .map(g => g.name);
-                            const normalizedEnemyGuilds = enemyGuilds.map(normalizeGuildName);
-
-                            // Look for related battles within the same time bounds
-                            let relatedBattles = [battle];
-                            for (const otherBattle of battles) {
-                                if (otherBattle.albionId !== battle.albionId && 
-                                    !processedBattles.has(otherBattle.albionId) && 
-                                    isBattleWithinTimeBounds(new Date(otherBattle.startedAt), lastBattleTime, sevenDaysAgo)) {
-                                    if (shouldMergeBattles(battle, otherBattle, normalizedEnemyGuilds)) {
-                                        relatedBattles.push(otherBattle);
-                                        processedBattles.add(otherBattle.albionId);
-                                    }
-                                }
-                            }
-
-                            await delay(1000);
+                            foundCurrentPageBattle = true;
 
                             // Get battle details
-                            const battleIds = relatedBattles.map(b => b.albionId).join(',');
-                            const detailsResponse = await axios.get(`https://api.albionbb.com/us/battles/kills?ids=${battleIds}`);
+                            await delay(1000);
+                            const detailsResponse = await axios.get(`https://api.albionbb.com/us/battles/kills?ids=${battle.albionId}`);
                             const battleEvents = detailsResponse.data;
 
                             if (!Array.isArray(battleEvents)) {
@@ -216,19 +178,12 @@ class BattleSyncService {
                             if (stats.kills >= 4 || stats.deaths >= 4) {
                                 results.battlesFound++;
 
-                                // Get all unique enemy guilds
-                                const allEnemyGuilds = [...new Set(
-                                    relatedBattles.flatMap(b => 
-                                        b.guilds
-                                            .filter(g => g.name !== guildName)
-                                            .map(g => g.name)
-                                    )
-                                )];
+                                // Get enemy guilds
+                                const enemyGuilds = battle.guilds
+                                    .filter(g => g.name !== guildName)
+                                    .map(g => g.name);
 
-                                // Create battle URL
-                                const battleUrl = relatedBattles.length > 1 
-                                    ? `https://albionbb.com/battles/multi?ids=${battleIds}`
-                                    : `https://albionbb.com/battles/${battle.albionId}`;
+                                const battleUrl = `https://albionbb.com/battles/${battle.albionId}`;
 
                                 // Check if battle is already registered
                                 const existingBattle = await prisma.battleRegistration.findFirst({
@@ -246,7 +201,7 @@ class BattleSyncService {
                                                 userId: this.client.user.id,
                                                 guildId: guildSettings.guildId,
                                                 battleTime: battleTime,
-                                                enemyGuilds: allEnemyGuilds,
+                                                enemyGuilds: enemyGuilds,
                                                 isVictory: stats.kills > stats.deaths,
                                                 kills: stats.kills,
                                                 deaths: stats.deaths,
@@ -263,11 +218,11 @@ class BattleSyncService {
                         }
 
                         if (!foundCurrentPageBattle || battles.length < 20) {
-                            break;
+                            shouldContinue = false;
+                        } else {
+                            page++;
+                            await delay(1000);
                         }
-
-                        page++;
-                        await delay(1000);
                     }
 
                     // Update channel name if we registered any battles
