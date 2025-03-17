@@ -19,6 +19,7 @@
     "dotenv": "16.4.7",
     "fuzzyset.js": "^1.0.7",
     "node-cron": "^3.0.3",
+    "node-fetch": "^2.7.0",
     "prisma": "5.22.0"
   },
   "devDependencies": {

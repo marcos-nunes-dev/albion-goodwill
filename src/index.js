@@ -6,6 +6,7 @@ const prisma = require('./config/prisma');
 const { formatDuration } = require('./utils/timeUtils');
 const CommandHandler = require('./handlers/CommandHandler');
 const AutocompleteHandler = require('./handlers/AutocompleteHandler');
+const SelectMenuHandler = require('./handlers/SelectMenuHandler');
 const GuildManager = require('./services/GuildManager');
 const BattleSyncService = require('./services/BattleSyncService');
 const { registerSlashCommands } = require('./slashCommands/registerCommands');
@@ -31,6 +32,9 @@ const guildManager = new GuildManager();
 const voiceTracker = new VoiceTracker(prisma, guildManager);
 const messageTracker = new MessageTracker();
 const commandHandler = new CommandHandler();
+const selectMenuHandler = new SelectMenuHandler();
+const autocompleteHandler = new AutocompleteHandler();
+const battleSyncService = new BattleSyncService();
 
 // Update railway.toml settings
 let serverStarted = false;
@@ -40,10 +44,6 @@ async function initializeBot() {
     // Initialize the shared Discord client
     const client = await getSharedClient();
     logger.info('Shared Discord client initialized');
-
-    // Initialize services
-    const autocompleteHandler = new AutocompleteHandler(client);
-    const battleSyncService = new BattleSyncService(client);
 
     // Set up event handlers
     client.once('ready', async () => {
@@ -117,6 +117,8 @@ async function initializeBot() {
       try {
         if (interaction.isAutocomplete()) {
           await autocompleteHandler.handleAutocomplete(interaction);
+        } else if (interaction.isStringSelectMenu()) {
+          await selectMenuHandler.handleSelectMenu(interaction);
         } else {
           await commandHandler.handleInteraction(interaction);
         }

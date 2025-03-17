@@ -99,3 +99,23 @@ model BattleRegistration {
   @@index([userId])
   @@map("battle_registrations")
 }
+
+model Composition {
+  id          String   @id @default(uuid())
+  guildId     String
+  channelId   String
+  messageId   String
+  threadId    String
+  roleId      String
+  title       String
+  description String
+  data        Json     // Store the full composition JSON
+  createdBy   String   // Discord user ID
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  status      String   @default("open") // open, closed, cancelled
+
+  @@index([guildId])
+  @@index([status])
+  @@map("compositions")
+}
