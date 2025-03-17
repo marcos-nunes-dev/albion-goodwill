@@ -1,5 +1,4 @@
 const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
-const prisma = require('../config/prisma');
 
 const commands = [
     // Info Commands
@@ -157,19 +156,35 @@ const commands = [
                 .setRequired(true)
         ),
 
-    // Albion Commands
+    // Albion Commands    
     new SlashCommandBuilder()
         .setName('pingpvp')
-        .setDescription('Pings a role with a PVP event message using a composition template')
+        .setDescription('Creates a PVP event message with composition template (v2)')
         .addRoleOption(option =>
             option.setName('role')
-                .setDescription('The role to ping for the PVP event')
+                .setDescription('Role to ping')
                 .setRequired(true)
         )
         .addAttachmentOption(option =>
-            option.setName('template')
+            option.setName('composition')
                 .setDescription('JSON file containing the composition template')
                 .setRequired(true)
+        ),
+    new SlashCommandBuilder()
+        .setName('x')
+        .setDescription('Select a weapon to ping from the composition')
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('The user to ping (Admin only)')
+                .setRequired(false)
+        ),
+    new SlashCommandBuilder()
+        .setName('xremove')
+        .setDescription('Remove a player from the composition')
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('The user to remove (Admin only)')
+                .setRequired(false)
         ),
     new SlashCommandBuilder()
         .setName('canplay')
