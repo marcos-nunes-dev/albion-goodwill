@@ -65,6 +65,9 @@ function shouldMergeBattles(battle1, battle2, normalizedEnemyGuilds) {
 
 class BattleSyncService {
     constructor(client) {
+        if (!client) {
+            throw new Error('Discord client must be provided to BattleSyncService');
+        }
         this.client = client;
     }
 
@@ -317,4 +320,4 @@ class BattleSyncService {
     }
 }
 
-module.exports = BattleSyncService; 
+module.exports = BattleSyncService;

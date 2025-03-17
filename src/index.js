@@ -44,10 +44,6 @@ async function initializeBot() {
     const client = await getSharedClient();
     logger.info('Shared Discord client initialized');
 
-    // Initialize battle sync service with client
-    BattleSyncService.initialize(client);
-    logger.info('Battle sync service initialized');
-
     // Set up event handlers
     client.once('ready', async () => {
       client.user.setActivity('Monitorando atividade', { type: 'WATCHING' });
@@ -79,7 +75,8 @@ async function initializeBot() {
         cron.schedule('0 * * * *', async () => {
           try {
             logger.info('Starting hourly battle sync...');
-            const results = await BattleSyncService.syncRecentBattles();
+            const battleSyncService = new BattleSyncService(client);
+            const results = await battleSyncService.syncRecentBattles();
             logger.info('Battle sync completed', {
               guildsProcessed: results.guildsProcessed,
               battlesFound: results.battlesFound,
@@ -103,7 +100,7 @@ async function initializeBot() {
     });
 
     client.on('error', (error) => {
-      console.error('Client error:', error);
+      logger.error('Client error:', error);
     });
 
     client.on('messageCreate', async (message) => {
@@ -275,6 +272,9 @@ async function initializeBot() {
         .then(() => process.exit(1))
         .catch(() => process.exit(1));
     });
+
+    // Login with the token
+    await client.login(process.env.DISCORD_TOKEN);
 
   } catch (error) {
     logger.error('Failed to initialize bot:', error);
