@@ -2,6 +2,10 @@ const { EmbedBuilder, PermissionFlagsBits, ButtonBuilder, ButtonStyle, ActionRow
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
 
+// Batch size for processing members
+const BATCH_SIZE = 50;
+const COLLECTOR_TIMEOUT = 600000; // 10 minutes
+
 async function updateNicknamePermissions(guild, enabled) {
     try {
         // Get @everyone role
@@ -19,6 +23,44 @@ async function updateNicknamePermissions(guild, enabled) {
         console.error('Error updating nickname permissions:', error);
         return false;
     }
+}
+
+async function processMemberBatch(members, registrationMap, interaction, progress) {
+    const results = {
+        succeeded: 0,
+        failed: 0,
+        errors: []
+    };
+
+    for (const member of members) {
+        try {
+            const registration = registrationMap.get(member.id);
+            if (registration) {
+                await member.setNickname(registration.playerName);
+                results.succeeded++;
+            }
+        } catch (error) {
+            results.failed++;
+            results.errors.push(`${member.user.tag}: ${error.message}`);
+        }
+
+        // Update progress every 10 members
+        if ((results.succeeded + results.failed) % 10 === 0) {
+            const progressEmbed = new EmbedBuilder()
+                .setTitle('Syncing Nicknames - In Progress')
+                .setDescription(`Progress: ${progress.current}/${progress.total} members processed\n` +
+                    `✅ Success: ${progress.succeeded + results.succeeded}\n` +
+                    `❌ Failed: ${progress.failed + results.failed}`)
+                .setColor(0xFFAA00)
+                .setTimestamp();
+
+            await interaction.editReply({
+                embeds: [progressEmbed]
+            });
+        }
+    }
+
+    return results;
 }
 
 module.exports = new Command({
@@ -99,11 +141,10 @@ module.exports = new Command({
             if (enabled) {
                 // Create collector for the buttons
                 const collector = response.createMessageComponentCollector({
-                    time: 30000 // 30 seconds
+                    time: COLLECTOR_TIMEOUT // 10 minutes
                 });
 
                 collector.on('collect', async (interaction) => {
-                    // Check if the interaction is from the command user
                     if (interaction.user.id !== (isSlash ? message.user.id : message.author.id)) {
                         await interaction.reply({
                             content: 'Only the command user can use these buttons.',
@@ -123,47 +164,86 @@ module.exports = new Command({
                                 }
                             });
 
-                            let succeeded = 0;
-                            let failed = 0;
-                            const errors = [];
+                            // Create a map for faster lookups
+                            const registrationMap = new Map(
+                                registrations.map(reg => [reg.userId, reg])
+                            );
 
-                            // Update nicknames
-                            for (const reg of registrations) {
-                                try {
-                                    const member = await message.guild.members.fetch(reg.userId);
-                                    if (member) {
-                                        await member.setNickname(reg.playerName);
-                                        succeeded++;
-                                    }
-                                } catch (error) {
-                                    failed++;
-                                    errors.push(`${reg.playerName}: ${error.message}`);
-                                }
+                            // Fetch all guild members
+                            await message.guild.members.fetch();
+                            const allMembers = Array.from(message.guild.members.cache.values());
+                            const totalMembers = allMembers.length;
+
+                            const progress = {
+                                current: 0,
+                                total: totalMembers,
+                                succeeded: 0,
+                                failed: 0,
+                                errors: []
+                            };
+
+                            // Initial progress message
+                            const progressEmbed = new EmbedBuilder()
+                                .setTitle('Starting Nickname Sync')
+                                .setDescription(`Preparing to process ${totalMembers} members...`)
+                                .setColor(0xFFAA00)
+                                .setTimestamp();
+
+                            await interaction.editReply({ embeds: [progressEmbed] });
+
+                            // Process members in batches
+                            for (let i = 0; i < allMembers.length; i += BATCH_SIZE) {
+                                const batch = allMembers.slice(i, i + BATCH_SIZE);
+                                const batchResults = await processMemberBatch(
+                                    batch,
+                                    registrationMap,
+                                    interaction,
+                                    progress
+                                );
+
+                                progress.current += batch.length;
+                                progress.succeeded += batchResults.succeeded;
+                                progress.failed += batchResults.failed;
+                                progress.errors.push(...batchResults.errors);
                             }
 
-                            // Create result embed
+                            // Create final result embed
                             const resultEmbed = new EmbedBuilder()
-                                .setTitle('Nickname Sync Results')
+                                .setTitle('Nickname Sync Complete')
                                 .setDescription([
-                                    `✅ Successfully updated: ${succeeded}`,
-                                    `❌ Failed to update: ${failed}`,
-                                    failed > 0 ? '\nErrors:' : '',
-                                    ...errors.slice(0, 10),
-                                    errors.length > 10 ? `...and ${errors.length - 10} more errors` : ''
+                                    `✅ Successfully updated: ${progress.succeeded}`,
+                                    `❌ Failed to update: ${progress.failed}`,
+                                    `📊 Total processed: ${progress.current}`,
+                                    progress.errors.length > 0 ? '\nLast 10 Errors:' : '',
+                                    ...progress.errors.slice(-10)
                                 ].join('\n'))
-                                .setColor(failed > 0 ? 0xFFAA00 : 0x00FF00)
+                                .setColor(progress.failed > 0 ? 0xFFAA00 : 0x00FF00)
                                 .setTimestamp();
 
                             await interaction.editReply({
-                                embeds: [embed, resultEmbed],
+                                embeds: [resultEmbed],
                                 components: []
                             });
+
+                            // If there are many errors, create an error log
+                            if (progress.errors.length > 10) {
+                                const errorLog = progress.errors.join('\n');
+                                await interaction.followUp({
+                                    content: 'Complete error log:',
+                                    files: [{
+                                        name: 'error_log.txt',
+                                        attachment: Buffer.from(errorLog, 'utf8')
+                                    }],
+                                    ephemeral: true
+                                });
+                            }
+
                         } catch (error) {
                             console.error('Error syncing nicknames:', error);
                             await interaction.editReply({
-                                embeds: [embed, new EmbedBuilder()
+                                embeds: [new EmbedBuilder()
                                     .setTitle('❌ Error')
-                                    .setDescription('An error occurred while syncing nicknames.')
+                                    .setDescription('An error occurred while syncing nicknames: ' + error.message)
                                     .setColor(0xFF0000)],
                                 components: []
                             });
@@ -176,7 +256,7 @@ module.exports = new Command({
                     }
                 });
 
-                // Remove buttons when collector expires
+                // Increase collector timeout for large servers
                 collector.on('end', () => {
                     if (isSlash) {
                         message.editReply({ embeds: [embed], components: [] }).catch(() => {});
