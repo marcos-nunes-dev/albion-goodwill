@@ -8,7 +8,7 @@ const CommandHandler = require('./handlers/CommandHandler');
 const AutocompleteHandler = require('./handlers/AutocompleteHandler');
 const SelectMenuHandler = require('./handlers/SelectMenuHandler');
 const GuildManager = require('./services/GuildManager');
-const BattleSyncService = require('./services/BattleSyncService');
+const { BattleSyncService } = require('./services/BattleSyncService');
 const { registerSlashCommands } = require('./slashCommands/registerCommands');
 const logger = require('./utils/logger');
 const { getSharedClient } = require('./config/discordClient');
@@ -34,7 +34,6 @@ const messageTracker = new MessageTracker();
 const commandHandler = new CommandHandler();
 const selectMenuHandler = new SelectMenuHandler();
 const autocompleteHandler = new AutocompleteHandler();
-const battleSyncService = new BattleSyncService();
 
 // Update railway.toml settings
 let serverStarted = false;
@@ -44,6 +43,10 @@ async function initializeBot() {
     // Initialize the shared Discord client
     const client = await getSharedClient();
     logger.info('Shared Discord client initialized');
+
+    // Initialize battle sync service with client
+    BattleSyncService.initialize(client);
+    logger.info('Battle sync service initialized');
 
     // Set up event handlers
     client.once('ready', async () => {
@@ -76,7 +79,7 @@ async function initializeBot() {
         cron.schedule('0 * * * *', async () => {
           try {
             logger.info('Starting hourly battle sync...');
-            const results = await battleSyncService.syncRecentBattles();
+            const results = await BattleSyncService.syncRecentBattles();
             logger.info('Battle sync completed', {
               guildsProcessed: results.guildsProcessed,
               battlesFound: results.battlesFound,

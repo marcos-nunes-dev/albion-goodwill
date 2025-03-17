@@ -1,6 +1,6 @@
 const Command = require('../../structures/Command');
 const { EmbedBuilder, Colors } = require('discord.js');
-const BattleSyncService = require('../../services/BattleSyncService');
+const { getSharedBattleSync } = require('../../services/BattleSyncService');
 
 module.exports = new Command({
     name: 'syncnow',
@@ -10,15 +10,19 @@ module.exports = new Command({
     cooldown: 30, // 30 seconds cooldown
     async execute(message, args, handler) {
         const isSlash = message.commandName === 'syncnow';
+        let response;
         
         try {
             // Send initial response
-            const initialResponse = isSlash ? 
+            response = isSlash ? 
                 await message.deferReply() : 
                 await message.reply('🔄 Starting manual battle sync...');
 
-            // Create a new instance of BattleSyncService
-            const battleSyncService = new BattleSyncService(handler.client);
+            // Get the shared BattleSyncService instance
+            const battleSyncService = getSharedBattleSync();
+            if (!battleSyncService) {
+                throw new Error('Battle sync service is not initialized');
+            }
 
             // Run the sync process
             const results = await battleSyncService.syncRecentBattles();
@@ -40,7 +44,7 @@ module.exports = new Command({
             if (isSlash) {
                 await message.editReply({ embeds: [resultEmbed] });
             } else {
-                await initialResponse.edit({ embeds: [resultEmbed] });
+                await response.edit({ embeds: [resultEmbed] });
             }
 
         } catch (error) {
@@ -53,10 +57,16 @@ module.exports = new Command({
                 .setTimestamp();
 
             if (isSlash) {
-                await message.editReply({ embeds: [errorEmbed] });
+                if (message.deferred) {
+                    await message.editReply({ embeds: [errorEmbed] });
+                } else {
+                    await message.reply({ embeds: [errorEmbed], ephemeral: true });
+                }
+            } else if (response) {
+                await response.edit({ embeds: [errorEmbed] });
             } else {
-                await initialResponse.edit({ embeds: [errorEmbed] });
+                await message.reply({ embeds: [errorEmbed] });
             }
         }
     }
-}); 
+});

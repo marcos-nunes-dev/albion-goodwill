@@ -5,6 +5,9 @@ const logger = require('../utils/logger');
 const FuzzySet = require('fuzzyset.js');
 const { EmbedBuilder, Colors } = require('discord.js');
 
+// Singleton instance
+let instance = null;
+
 // Helper function to add delay between API calls
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -64,8 +67,26 @@ function shouldMergeBattles(battle1, battle2, normalizedEnemyGuilds) {
 
 class BattleSyncService {
     constructor(client) {
+        if (instance) {
+            throw new Error('BattleSyncService is a singleton. Use getSharedBattleSync() to access the instance.');
+        }
+        if (!client) {
+            throw new Error('Discord client must be provided to BattleSyncService');
+        }
         this.client = client;
-        this.clientId = client?.user?.id;
+        instance = this;
+    }
+
+    static initialize(client) {
+        if (!instance) {
+            instance = new BattleSyncService(client);
+            logger.info('BattleSyncService initialized');
+        }
+        return instance;
+    }
+
+    static getInstance() {
+        return instance;
     }
 
     async syncRecentBattles() {
@@ -76,12 +97,11 @@ class BattleSyncService {
             errors: 0
         };
 
-        if (!this.client || !this.clientId) {
-            logger.error('Client not properly initialized');
-            return results;
-        }
-
         try {
+            if (!this.client?.user?.id) {
+                throw new Error('Discord client is not properly initialized');
+            }
+
             // Get all guilds with battle sync enabled
             const guildsToSync = await prisma.guildSettings.findMany({
                 where: {
@@ -224,7 +244,7 @@ class BattleSyncService {
                                                     const validDeaths = parseInt(stats.deaths) || 0;
 
                                                     const battleData = {
-                                                        userId: this.clientId,
+                                                        userId: this.client.user.id || 'system',  // Fallback to 'system' if client is not ready
                                                         guildId: guildSettings.guildId,
                                                         battleTime: validBattleTime,
                                                         enemyGuilds: validEnemyGuilds,
@@ -234,7 +254,7 @@ class BattleSyncService {
                                                         battleUrl: battleUrl
                                                     };
 
-                                                    logger.info(`Battle ${battle.albionId} - Registration data:`, battleData);
+                                                    logger.info(`Battle ${battle.albionId} - Registration data:`, JSON.stringify(battleData, null, 2));
 
                                                     // Register the battle
                                                     await prisma.battleRegistration.create({
@@ -333,4 +353,8 @@ class BattleSyncService {
     }
 }
 
-module.exports = BattleSyncService; 
+// Export the class and getter function
+module.exports = {
+    BattleSyncService,
+    getSharedBattleSync: () => instance
+};
