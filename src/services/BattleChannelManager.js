@@ -37,28 +37,32 @@ class BattleChannelManager {
      * Update all configured battle channels with current stats
      */
     async updateChannels() {
+        const logger = this.client.logger;
         try {
-            logger.info('Starting to update all battle log channels...');
-            
-            // Get all guild settings with battle log channels
-            const guildSettings = await prisma.guildSettings.findMany({
+            // Get all guilds with battlelog channel configured
+            const guildsToUpdate = await prisma.guildSettings.findMany({
                 where: {
-                    battlelogChannelId: {
-                        not: null
-                    }
+                    AND: [
+                        { battlelogChannelId: { not: null } },
+                        { battlelogWebhook: { not: null } }
+                    ]
                 }
             });
 
-            logger.info(`Found ${guildSettings.length} guilds with battle log channels`);
-
-            // Update each guild's channel
-            for (const settings of guildSettings) {
-                await this.updateGuildChannel(settings);
+            if (guildsToUpdate.length === 0) {
+                logger.info('No guilds with battlelog configuration found');
+                return;
             }
 
-            logger.info('Finished updating all battle log channels');
+            for (const guild of guildsToUpdate) {
+                try {
+                    await this.updateGuildChannel(guild);
+                } catch (error) {
+                    logger.error(`Error updating channel for guild ${guild.guildId}:`, error);
+                }
+            }
         } catch (error) {
-            logger.error('Error updating battle log channels:', error);
+            logger.error('Error updating battle channels:', error);
         }
     }
 

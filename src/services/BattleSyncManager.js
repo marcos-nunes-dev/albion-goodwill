@@ -189,31 +189,39 @@ class BattleSyncManager {
      * Sync battles for all configured guilds
      */
     async syncBattles() {
-        const results = {
-            guildsProcessed: 0,
-            battlesProcessed: 0,
-            errors: 0
-        };
-
+        const logger = this.client.logger;
         try {
-            // Get all guilds with Albion ID configured
+            // Get all guilds with both battlelog channel and webhook configured
             const guildsToSync = await prisma.guildSettings.findMany({
                 where: {
-                    albionGuildId: {
-                        not: null
-                    }
+                    AND: [
+                        { battlelogChannelId: { not: null } },
+                        { battlelogWebhook: { not: null } }
+                    ]
                 }
             });
 
             if (guildsToSync.length === 0) {
-                logger.info('No guilds found with Albion Guild ID configured');
-                return results;
+                logger.info('No guilds with battlelog configuration found');
+                return {
+                    guildsProcessed: 0,
+                    battlesProcessed: 0,
+                    errors: 0,
+                    channelUpdates: 'No configured guilds'
+                };
             }
 
-            logger.info(`Found ${guildsToSync.length} guilds to sync battles for`);
+            let totalBattlesProcessed = 0;
+            let errors = 0;
 
+            // Process each configured guild
             for (const guildSettings of guildsToSync) {
                 try {
+                    if (!guildSettings.albionGuildId) {
+                        logger.warn(`Guild ${guildSettings.guildId} has no Albion guild ID configured`);
+                        continue;
+                    }
+
                     // Get guild info
                     const guildInfo = await this.getGuildInfo(guildSettings.albionGuildId);
                     if (!guildInfo) {
@@ -270,7 +278,7 @@ class BattleSyncManager {
                             }
 
                             await this.processBattle(battle, guildSettings, guildInfo.guildName);
-                            results.battlesProcessed++;
+                            totalBattlesProcessed++;
 
                             // Rate limiting
                             await this.sleep(this.REQUEST_DELAY);
@@ -283,23 +291,31 @@ class BattleSyncManager {
                         page++;
                     }
 
-                    results.guildsProcessed++;
-
                 } catch (error) {
                     logger.error(`Error processing guild ${guildSettings.guildId}:`, error);
-                    results.errors++;
+                    errors++;
                 }
 
                 // Rate limiting between guilds
                 await this.sleep(this.REQUEST_DELAY * 2);
             }
 
+            return {
+                guildsProcessed: guildsToSync.length,
+                battlesProcessed: totalBattlesProcessed,
+                errors,
+                channelUpdates: 'No configured guilds'
+            };
+
         } catch (error) {
             logger.error('Error in battle sync:', error);
-            results.errors++;
+            return {
+                guildsProcessed: 0,
+                battlesProcessed: 0,
+                errors: 1,
+                channelUpdates: 'No configured guilds'
+            };
         }
-
-        return results;
     }
 }
 
