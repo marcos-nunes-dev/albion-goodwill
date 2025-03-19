@@ -21,7 +21,7 @@ module.exports = new Command({
             // Get parameters based on command type
             let guildId, guildName, verifiedRole, tankRole, healerRole, supportRole;
             let meleeRole, rangedRole, mountRole, prefix;
-            let battlelogChannel;
+            let battlelogChannel, webhookUrl;
 
             if (isSlash) {
                 guildId = message.options.getString('guild_id');
@@ -35,6 +35,7 @@ module.exports = new Command({
                 mountRole = message.options.getRole('mount_role');
                 prefix = message.options.getString('prefix');
                 battlelogChannel = message.options.getChannel('battlelog_channel');
+                webhookUrl = message.options.getString('battlelog_webhook');
             }
 
             // Get current settings
@@ -55,7 +56,8 @@ module.exports = new Command({
                 dpsRangedRoleId: rangedRole?.id || settings?.dpsRangedRoleId,
                 battlemountRoleId: mountRole?.id || settings?.battlemountRoleId,
                 commandPrefix: prefix || settings?.commandPrefix,
-                battlelogChannelId: battlelogChannel?.id || settings?.battlelogChannelId
+                battlelogChannelId: battlelogChannel?.id || settings?.battlelogChannelId,
+                battlelogWebhook: webhookUrl || settings?.battlelogWebhook
             };
 
             // Update database
@@ -120,6 +122,9 @@ module.exports = new Command({
                                 `${checkMark} Default (!albiongw)`}`,
                             `Battle Log Channel: ${updateData.battlelogChannelId ? 
                                 `${battlelogChannel ? newMark : checkMark} <#${updateData.battlelogChannelId}>` : 
+                                `${crossMark} Not Set`}`,
+                            `Battle Log Webhook: ${updateData.battlelogWebhook ? 
+                                `${webhookUrl ? newMark : checkMark} Set` : 
                                 `${crossMark} Not Set`}`,
                             `Competitor Guilds: ${settings?.competitorIds?.length ? 
                                 `${checkMark} ${settings.competitorIds.length} set` : 
