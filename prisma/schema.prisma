@@ -62,6 +62,7 @@ model GuildSettings {
   updatedAt          DateTime @updatedAt
   syncAlbionNickname Boolean  @default(false)
   battlelogWebhook   String?
+  battlelogChannelId String?
 
   @@map("guild_settings")
 }

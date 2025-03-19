@@ -65,7 +65,8 @@ module.exports = new Command({
                     {
                         name: 'Channel Configuration',
                         value: [
-                            `Battle Log Webhook: ${settings.battlelogWebhook ? '✅ Configured' : '❌ Not set'}`
+                            `Battle Log Webhook: ${settings.battlelogWebhook ? '✅ Configured' : '❌ Not set'}`,
+                            `Battle Log Channel: ${settings.battlelogChannelId ? `✅ <#${settings.battlelogChannelId}>` : '❌ Not set'}`
                         ].join('\n')
                     },
                     {
