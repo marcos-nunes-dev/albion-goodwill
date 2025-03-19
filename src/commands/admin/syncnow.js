@@ -1,72 +1,80 @@
 const Command = require('../../structures/Command');
 const { EmbedBuilder, Colors } = require('discord.js');
-const { getSharedBattleSync } = require('../../services/BattleSyncService');
+const BattleSyncManager = require('../../services/BattleSyncManager');
+const BattleChannelManager = require('../../services/BattleChannelManager');
 
-module.exports = new Command({
+const command = new Command({
     name: 'syncnow',
-    description: 'Manually trigger the battle sync process',
+    description: 'Force sync battles from Albion Online',
     category: 'admin',
     permissions: ['ADMINISTRATOR'],
-    cooldown: 30, // 30 seconds cooldown
+    cooldown: 0,
     async execute(message, args, handler) {
         const isSlash = message.commandName === 'syncnow';
-        let response;
         
         try {
-            // Send initial response
-            response = isSlash ? 
-                await message.deferReply() : 
-                await message.reply('🔄 Starting manual battle sync...');
-
-            // Get the shared BattleSyncService instance
-            const battleSyncService = getSharedBattleSync();
-            if (!battleSyncService) {
-                throw new Error('Battle sync service is not initialized');
+            // Defer reply since this might take a while
+            if (isSlash) {
+                await message.deferReply({ ephemeral: true });
             }
 
-            // Run the sync process
-            const results = await battleSyncService.syncRecentBattles();
-
-            // Create response embed
-            const resultEmbed = new EmbedBuilder()
-                .setTitle('Manual Battle Sync Complete')
-                .setDescription([
-                    '**Process Summary:**',
-                    `• Guilds Processed: ${results.guildsProcessed}`,
-                    `• Battles Found: ${results.battlesFound}`,
-                    `• Battles Registered: ${results.battlesRegistered}`,
-                    `• Errors Encountered: ${results.errors}`
-                ].join('\n'))
-                .setColor(results.errors > 0 ? Colors.Orange : Colors.Green)
+            // Create status embed
+            const statusEmbed = new EmbedBuilder()
+                .setTitle('🔄 Battle Sync Started')
+                .setDescription('Fetching battles from Albion Online...')
+                .setColor(Colors.Blue)
                 .setTimestamp();
 
-            // Send or edit the response
-            if (isSlash) {
-                await message.editReply({ embeds: [resultEmbed] });
-            } else {
-                await response.edit({ embeds: [resultEmbed] });
-            }
+            const reply = isSlash ? 
+                await message.editReply({ embeds: [statusEmbed] }) :
+                await message.reply({ embeds: [statusEmbed] });
 
+            // Run battle sync
+            const battleSyncManager = new BattleSyncManager();
+            const results = await battleSyncManager.syncBattles();
+
+            // Update battle channels
+            const client = message.client || handler.client;
+            const battleChannelManager = new BattleChannelManager(client);
+            await battleChannelManager.updateChannels();
+
+            // Create completion embed
+            const completionEmbed = new EmbedBuilder()
+                .setTitle('✅ Battle Sync Complete')
+                .addFields([
+                    {
+                        name: 'Results',
+                        value: [
+                            `Guilds Processed: ${results.guildsProcessed}`,
+                            `Battles Processed: ${results.battlesProcessed}`,
+                            `Errors: ${results.errors}`,
+                            `Channel Updates: Completed`
+                        ].join('\n')
+                    }
+                ])
+                .setColor(results.errors > 0 ? Colors.Yellow : Colors.Green)
+                .setTimestamp();
+
+            if (isSlash) {
+                await message.editReply({ embeds: [completionEmbed] });
+            } else {
+                await reply.edit({ embeds: [completionEmbed] });
+            }
         } catch (error) {
             console.error('Error in syncnow command:', error);
-            
             const errorEmbed = new EmbedBuilder()
                 .setTitle('❌ Error')
-                .setDescription('An error occurred while running the battle sync.')
+                .setDescription('An error occurred while syncing battles.')
                 .setColor(Colors.Red)
                 .setTimestamp();
 
             if (isSlash) {
-                if (message.deferred) {
-                    await message.editReply({ embeds: [errorEmbed] });
-                } else {
-                    await message.reply({ embeds: [errorEmbed], ephemeral: true });
-                }
-            } else if (response) {
-                await response.edit({ embeds: [errorEmbed] });
+                await message.editReply({ embeds: [errorEmbed] });
             } else {
                 await message.reply({ embeds: [errorEmbed] });
             }
         }
     }
 });
+
+module.exports = command;

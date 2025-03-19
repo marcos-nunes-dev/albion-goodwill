@@ -147,14 +147,9 @@ const commands = [
                 .setAutocomplete(true)
         ),
     new SlashCommandBuilder()
-        .setName('syncbattlesbydate')
-        .setDescription('Sync battles from Albion API for a specific date')
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-        .addStringOption(option =>
-            option.setName('date')
-                .setDescription('Target date (MM/DD format)')
-                .setRequired(true)
-        ),
+        .setName('syncnow')
+        .setDescription('Force sync battles from Albion Online')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     // Albion Commands    
     new SlashCommandBuilder()
@@ -345,11 +340,16 @@ const commands = [
                 .setDescription('Role for verified members')
                 .setRequired(false)
         )
+        .addStringOption(option =>
+            option.setName('battlelog_webhook')
+                .setDescription('Discord webhook URL for battle logs (create in channel settings)')
+                .setRequired(false)
+        )
         .addChannelOption(option =>
             option.setName('battlelog_channel')
-                .setDescription('Channel for battle logs')
-                .setRequired(false)
+                .setDescription('Channel for battle logs (will be renamed with stats)')
                 .addChannelTypes(ChannelType.GuildText)
+                .setRequired(false)
         )
         .addRoleOption(option =>
             option.setName('tank_role')
@@ -383,9 +383,10 @@ const commands = [
         )
         .addStringOption(option =>
             option.setName('prefix')
-                .setDescription('Custom command prefix (must start with: ! $ % & * # @ ? .)')
+                .setDescription('Custom command prefix')
                 .setRequired(false)
-        ),
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     new SlashCommandBuilder()
         .setName('membersdiff')
         .setDescription('Compare members in a role with a list from a text file')

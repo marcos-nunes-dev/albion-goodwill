@@ -8,7 +8,8 @@ const CommandHandler = require('./handlers/CommandHandler');
 const AutocompleteHandler = require('./handlers/AutocompleteHandler');
 const SelectMenuHandler = require('./handlers/SelectMenuHandler');
 const GuildManager = require('./services/GuildManager');
-const { BattleSyncService } = require('./services/BattleSyncService');
+const BattleChannelManager = require('./services/BattleChannelManager');
+const BattleSyncManager = require('./services/BattleSyncManager');
 const { registerSlashCommands } = require('./slashCommands/registerCommands');
 const logger = require('./utils/logger');
 const { getSharedClient } = require('./config/discordClient');
@@ -30,7 +31,9 @@ if (missingVars.length > 0) {
 // Initialize services
 const guildManager = new GuildManager();
 const voiceTracker = new VoiceTracker(prisma, guildManager);
-const messageTracker = new MessageTracker();
+const messageTracker = new MessageTracker(prisma, guildManager);
+const battleChannelManager = new BattleChannelManager(getSharedClient());
+const battleSyncManager = new BattleSyncManager();
 const commandHandler = new CommandHandler();
 const selectMenuHandler = new SelectMenuHandler();
 const autocompleteHandler = new AutocompleteHandler();
@@ -71,18 +74,66 @@ async function initializeBot() {
         }
         console.log(`Initialized ${client.guilds.cache.size} servers`);
 
+        // Start battle channel manager
+        battleChannelManager.start();
+        logger.info('Battle channel manager started');
+
         // Set up hourly cron job for battle sync
         cron.schedule('0 * * * *', async () => {
           try {
             logger.info('Starting hourly battle sync...');
-            const battleSyncService = new BattleSyncService(client);
-            const results = await battleSyncService.syncRecentBattles();
-            logger.info('Battle sync completed', {
-              guildsProcessed: results.guildsProcessed,
-              battlesFound: results.battlesFound,
-              battlesRegistered: results.battlesRegistered,
-              errors: results.errors
+
+            // Get all guilds with battle log channels
+            const guildsWithChannels = await prisma.guildSettings.findMany({
+              where: {
+                battlelogChannelId: {
+                  not: null
+                }
+              }
             });
+
+            // Send temporary status message to each channel
+            const statusMessages = [];
+            for (const guild of guildsWithChannels) {
+              try {
+                const channel = await client.channels.fetch(guild.battlelogChannelId);
+                if (channel) {
+                  const statusMsg = await channel.send({
+                    embeds: [{
+                      title: '🔄 Auto-Sync Started',
+                      description: 'Checking for new battles...',
+                      color: 0x3498db,
+                      footer: {
+                        text: 'This message will be deleted after sync completes'
+                      }
+                    }]
+                  });
+                  statusMessages.push(statusMsg);
+                }
+              } catch (error) {
+                logger.error(`Error sending status to channel ${guild.battlelogChannelId}:`, error);
+              }
+            }
+
+            // Run battle sync
+            const results = await battleSyncManager.syncBattles();
+            logger.info('Battle sync completed', results);
+            
+            // Force update battle channels after sync
+            await battleChannelManager.updateChannels();
+            logger.info('Battle channel update completed');
+
+            // Delete status messages after a delay
+            setTimeout(async () => {
+              for (const msg of statusMessages) {
+                try {
+                  await msg.delete();
+                } catch (error) {
+                  logger.error('Error deleting status message:', error);
+                }
+              }
+            }, 5000); // Delete after 5 seconds
+
           } catch (error) {
             logger.error('Error in hourly battle sync:', error);
           }
