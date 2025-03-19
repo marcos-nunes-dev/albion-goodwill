@@ -1,72 +1,68 @@
-const { Client } = require('discord.js');
 const prisma = require('../config/prisma');
 const axios = require('axios');
+const { EmbedBuilder, Colors } = require('discord.js');
 const logger = require('../utils/logger');
 
 class BattleSyncManager {
-    /**
-     * @param {Client} client Discord.js client instance
-     */
     constructor(client) {
         this.client = client;
-        this.REQUEST_DELAY = 1000; // 1 second delay between requests
+        this.API_BASE_URL = 'https://api.albionbb.com/us';
+        this.MIN_PLAYERS = 20;
+        this.MIN_GUILD_PLAYERS = 14;
+        this.REQUEST_DELAY = 1000; // 1 second between requests
     }
 
-    /**
-     * Sleep for a specified duration
-     * @param {number} ms Milliseconds to sleep
-     * @returns {Promise<void>}
-     */
-    sleep(ms) {
+    async sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    /**
-     * Get guild info from Albion API
-     * @param {string} guildId Albion guild ID
-     * @returns {Promise<any>} Guild info
-     */
     async getGuildInfo(guildId) {
         try {
-            const response = await axios.get(`https://gameinfo.albiononline.com/api/gameinfo/guilds/${guildId}`);
-            return response.data;
+            const response = await axios.get(`${this.API_BASE_URL}/stats/guilds/${guildId}?minPlayers=10`);
+            if (!Array.isArray(response.data) || response.data.length === 0) {
+                return null;
+            }
+            return {
+                guildName: response.data[0].guildName
+            };
         } catch (error) {
-            this.client.logger.error(`Error fetching guild info for ${guildId}:`, error);
+            logger.error('Error fetching guild info:', error);
             return null;
         }
     }
 
-    /**
-     * Get battles for a guild from Albion API
-     * @param {string} guildId Albion guild ID
-     * @param {number} page Page number
-     * @returns {Promise<any>} Battle data
-     */
-    async getGuildBattles(guildId, page = 1) {
+    async getBattleDetails(battleId) {
         try {
-            const response = await axios.get(
-                `https://gameinfo.albiononline.com/api/gameinfo/guilds/${guildId}/battles?page=${page}&limit=50`
-            );
-            return response.data;
+            const response = await axios.get(`${this.API_BASE_URL}/battles/kills?ids=${battleId}`);
+            return Array.isArray(response.data) ? response.data : null;
         } catch (error) {
-            this.client.logger.error(`Error fetching battles for guild ${guildId}:`, error);
+            logger.error(`Error fetching battle details for battle ${battleId}:`, error);
             return null;
         }
     }
 
-    /**
-     * Process a single battle
-     * @param {Object} battle Battle data
-     * @param {Object} guildSettings Guild settings
-     * @param {string} guildName Guild name
-     */
+    formatBattleDate(date) {
+        return date.toLocaleDateString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+
     async processBattle(battle, guildSettings, guildName) {
+        if (!battle || !battle.startedAt || !battle.albionId) {
+            logger.warn(`Invalid battle data received for guild ${guildSettings.guildId}`);
+            return;
+        }
+
         try {
-            // Check if battle already exists
+            // Check if battle already registered
             const existingBattle = await prisma.battleRegistration.findFirst({
                 where: {
                     guildId: guildSettings.guildId,
-                    albionId: battle.id.toString()
+                    battleTime: new Date(battle.startedAt)
                 }
             });
 
@@ -74,98 +70,106 @@ class BattleSyncManager {
                 return;
             }
 
-            // Get battle participants
-            const guildParticipants = battle.players.filter(
-                player => player.guildName === guildName
-            );
+            // Get our guild's data from the battle
+            const ourGuild = battle.guilds.find(g => g.name === guildName);
+            if (!ourGuild || ourGuild.players < this.MIN_GUILD_PLAYERS) {
+                return;
+            }
 
-            // Calculate stats
-            const kills = guildParticipants.reduce((sum, player) => sum + player.kills, 0);
-            const deaths = guildParticipants.reduce((sum, player) => sum + player.deaths, 0);
+            // Get battle details
+            const battleDetails = await this.getBattleDetails(battle.albionId);
+            if (!battleDetails || !Array.isArray(battleDetails)) {
+                return;
+            }
 
-            // Determine victory
-            const guildAlliance = battle.alliances.find(
-                alliance => alliance.guilds.some(g => g.name === guildName)
-            );
-            const isVictory = guildAlliance?.kills > guildAlliance?.deaths;
+            // Process battle details
+            const ourKills = battleDetails.filter(event => 
+                event.Killer.GuildName === guildName
+            ).length;
 
-            // Get enemy guilds
-            const enemyGuilds = battle.alliances
-                .filter(alliance => !alliance.guilds.some(g => g.name === guildName))
-                .flatMap(alliance => alliance.guilds)
-                .map(guild => guild.name);
+            const ourDeaths = battleDetails.filter(event => 
+                event.Victim.GuildName === guildName
+            ).length;
 
-            // Save battle to database
+            // Calculate if we won (more kills than deaths)
+            const isVictory = ourKills > ourDeaths;
+
+            // Get enemy guilds (excluding our guild)
+            const enemyGuilds = battle.guilds
+                .filter(g => g.name !== guildName)
+                .map(g => g.name);
+
+            // Create battle registration
             await prisma.battleRegistration.create({
                 data: {
                     guildId: guildSettings.guildId,
-                    albionId: battle.id.toString(),
+                    userId: this.client.user.id,
+                    battleTime: new Date(battle.startedAt),
+                    enemyGuilds,
+                    deaths: ourDeaths,
+                    kills: ourKills,
                     isVictory,
-                    kills,
-                    deaths,
-                    startedAt: new Date(battle.startTime),
-                    totalFame: battle.totalFame,
-                    totalKills: battle.totalKills,
-                    players: battle.players.length
+                    battleUrl: `https://albionbb.com/battles/${battle.albionId}`
                 }
             });
 
+            logger.info(`Saved battle ${battle.albionId} - ${isVictory ? 'Victory' : 'Defeat'} (${ourKills}/${ourDeaths}) vs ${enemyGuilds.join(', ')}`);
+
             // Send webhook if configured
             if (guildSettings.battlelogWebhook) {
-                // Create webhook message
-                const webhookMessage = {
-                    embeds: [{
-                        title: isVictory ? '🏆 Victory!' : '💀 Defeat',
-                        description: `Battle against ${enemyGuilds.join(', ')}`,
-                        color: isVictory ? 0x00ff00 : 0xff0000,
-                        fields: [
-                            {
-                                name: 'Stats',
-                                value: `Kills: ${kills}\nDeaths: ${deaths}`,
-                                inline: true
-                            },
-                            {
-                                name: 'Time',
-                                value: new Date(battle.startTime).toLocaleString('pt-BR', {
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                    hour12: false
-                                }).replace(',', ''),
-                                inline: true
-                            },
-                            {
-                                name: 'Battle Report',
-                                value: `[View on Battleboard](https://albionbb.com/battles/${battle.id})`,
-                                inline: true
-                            }
-                        ],
-                        timestamp: new Date(battle.startTime).toISOString()
-                    }]
-                };
-
                 try {
+                    const webhookMessage = {
+                        embeds: [{
+                            title: isVictory ? '🏆 Victory!' : '💀 Defeat',
+                            description: `Battle against ${enemyGuilds.join(', ')}`,
+                            color: isVictory ? 0x00ff00 : 0xff0000,
+                            fields: [
+                                {
+                                    name: 'Stats',
+                                    value: `Kills: ${ourKills}\nDeaths: ${ourDeaths}`,
+                                    inline: true
+                                },
+                                {
+                                    name: 'Time',
+                                    value: new Date(battle.startedAt).toLocaleString('pt-BR', {
+                                        day: '2-digit',
+                                        month: '2-digit',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                        hour12: false
+                                    }).replace(',', ''),
+                                    inline: true
+                                },
+                                {
+                                    name: 'Battle Report',
+                                    value: `[View on Battleboard](https://albiononline.com/killboard/battles/${battle.albionId})`,
+                                    inline: true
+                                }
+                            ],
+                            timestamp: new Date(battle.startedAt).toISOString()
+                        }]
+                    };
+
                     await axios.post(guildSettings.battlelogWebhook, webhookMessage);
                 } catch (error) {
-                    this.client.logger.error(`Error sending webhook for battle ${battle.id}:`, error);
+                    logger.error(`Error sending webhook for guild ${guildSettings.guildId}:`, error);
                 }
             }
+
         } catch (error) {
-            this.client.logger.error(`Error processing battle ${battle.id}:`, error);
+            logger.error(`Error processing battle ${battle.albionId} for guild ${guildSettings.guildId}:`, error);
         }
     }
 
-    /**
-     * Sync battles for all configured guilds
-     */
     async syncBattles() {
-        const logger = this.client.logger;
         try {
-            // Get all guilds with both battlelog channel and webhook configured
+            logger.info('Starting battle sync...');
+            
+            // Get all guilds with both Albion ID and battlelog configuration
             const guildsToSync = await prisma.guildSettings.findMany({
                 where: {
                     AND: [
+                        { albionGuildId: { not: null } },
                         { battlelogChannelId: { not: null } },
                         { battlelogWebhook: { not: null } }
                     ]
@@ -173,77 +177,76 @@ class BattleSyncManager {
             });
 
             if (guildsToSync.length === 0) {
-                logger.info('No guilds with battlelog configuration found');
-                return {
-                    guildsProcessed: 0,
-                    battlesProcessed: 0,
-                    errors: 0,
-                    channelUpdates: 'No configured guilds'
-                };
+                logger.info('No guilds found with complete battle configuration');
+                return;
             }
 
-            let totalBattlesProcessed = 0;
-            let errors = 0;
+            logger.info(`Found ${guildsToSync.length} guilds to sync battles for`);
 
-            // Process each configured guild
             for (const guildSettings of guildsToSync) {
                 try {
-                    if (!guildSettings.albionGuildId) {
-                        logger.warn(`Guild ${guildSettings.guildId} has no Albion guild ID configured`);
-                        continue;
-                    }
-
                     // Get guild info
                     const guildInfo = await this.getGuildInfo(guildSettings.albionGuildId);
                     if (!guildInfo) {
-                        logger.error(`Could not fetch guild info for ${guildSettings.albionGuildId}`);
                         continue;
                     }
 
-                    // Fetch battles page by page
+                    // Get last battle time or default to 2 days ago
+                    const lastBattle = await prisma.battleRegistration.findFirst({
+                        where: { guildId: guildSettings.guildId },
+                        orderBy: { battleTime: 'desc' }
+                    });
+
+                    const lastBattleTime = lastBattle ? new Date(lastBattle.battleTime) : null;
+                    const twoDaysAgo = new Date();
+                    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+
                     let page = 1;
-                    let hasMoreBattles = true;
+                    let shouldContinue = true;
 
-                    while (hasMoreBattles) {
-                        const battles = await this.getGuildBattles(guildSettings.albionGuildId, page);
-                        
-                        if (!battles || !battles.length) {
-                            hasMoreBattles = false;
+                    while (shouldContinue) {
+                        // Get battles from API
+                        logger.info(`Fetching battles page ${page} for guild ${guildInfo.guildName}...`);
+                        const response = await axios.get(
+                            `${this.API_BASE_URL}/battles?guildId=${guildSettings.albionGuildId}&minPlayers=${this.MIN_PLAYERS}&page=${page}`
+                        );
+
+                        const battles = Array.isArray(response.data) ? response.data : [];
+                        if (battles.length === 0) {
                             break;
                         }
 
-                        // Check if we've seen this battle before
-                        const lastBattle = await prisma.battleRegistration.findFirst({
-                            where: {
-                                guildId: guildSettings.guildId,
-                                albionId: battles[0].id.toString()
-                            }
-                        });
+                        let foundOldBattle = false;
 
-                        if (lastBattle) {
-                            hasMoreBattles = false;
-                            break;
-                        }
-
-                        // Process battles
+                        // Process each battle
                         for (const battle of battles) {
-                            const existingBattle = await prisma.battleRegistration.findFirst({
-                                where: {
-                                    guildId: guildSettings.guildId,
-                                    albionId: battle.id.toString()
-                                }
-                            });
+                            if (!battle || !battle.startedAt || !battle.albionId) {
+                                logger.warn(`Invalid battle data received on page ${page}`);
+                                continue;
+                            }
 
-                            if (existingBattle) {
-                                hasMoreBattles = false;
+                            const battleTime = new Date(battle.startedAt);
+
+                            // Stop if we hit a battle older than our cutoff
+                            if (lastBattleTime && battleTime <= lastBattleTime) {
+                                foundOldBattle = true;
                                 break;
                             }
 
-                            await this.processBattle(battle, guildSettings, guildInfo.name);
-                            totalBattlesProcessed++;
+                            // Skip battles older than 2 days if no last battle
+                            if (!lastBattleTime && battleTime < twoDaysAgo) {
+                                foundOldBattle = true;
+                                break;
+                            }
+
+                            await this.processBattle(battle, guildSettings, guildInfo.guildName);
 
                             // Rate limiting
                             await this.sleep(this.REQUEST_DELAY);
+                        }
+
+                        if (foundOldBattle) {
+                            break;
                         }
 
                         page++;
@@ -251,28 +254,15 @@ class BattleSyncManager {
 
                 } catch (error) {
                     logger.error(`Error processing guild ${guildSettings.guildId}:`, error);
-                    errors++;
                 }
 
                 // Rate limiting between guilds
-                await this.sleep(this.REQUEST_DELAY);
+                await this.sleep(this.REQUEST_DELAY * 2);
             }
 
-            return {
-                guildsProcessed: guildsToSync.length,
-                battlesProcessed: totalBattlesProcessed,
-                errors,
-                channelUpdates: 'Completed'
-            };
-
+            logger.info('Battle sync complete');
         } catch (error) {
             logger.error('Error in battle sync:', error);
-            return {
-                guildsProcessed: 0,
-                battlesProcessed: 0,
-                errors: 1,
-                channelUpdates: 'Failed'
-            };
         }
     }
 }

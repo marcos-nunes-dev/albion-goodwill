@@ -7,6 +7,13 @@ class BattleChannelManager {
      */
     constructor(client) {
         this.client = client;
+        // Initialize default logger if client.logger is not available
+        this.logger = client.logger || {
+            info: console.log,
+            error: console.error,
+            warn: console.warn,
+            debug: console.debug
+        };
     }
 
     /**
@@ -28,7 +35,6 @@ class BattleChannelManager {
      * @param {Object} guildSettings Guild settings
      */
     async updateGuildChannel(guildSettings) {
-        const logger = this.client.logger;
         try {
             // Get battle statistics
             const stats = await prisma.battleRegistration.findMany({
@@ -54,17 +60,17 @@ class BattleChannelManager {
             // Get channel
             const channel = await this.client.channels.fetch(guildSettings.battlelogChannelId);
             if (!channel) {
-                logger.error(`Channel ${guildSettings.battlelogChannelId} not found for guild ${guildSettings.guildId}`);
+                this.logger.error(`Channel ${guildSettings.battlelogChannelId} not found for guild ${guildSettings.guildId}`);
                 return;
             }
 
             // Update channel name if different
             if (channel.name !== channelName) {
                 await channel.setName(channelName);
-                logger.info(`Updated channel name for guild ${guildSettings.guildId} to ${channelName}`);
+                this.logger.info(`Updated channel name for guild ${guildSettings.guildId} to ${channelName}`);
             }
         } catch (error) {
-            logger.error(`Error updating channel for guild ${guildSettings.guildId}:`, error);
+            this.logger.error(`Error updating channel for guild ${guildSettings.guildId}:`, error);
         }
     }
 
@@ -72,7 +78,6 @@ class BattleChannelManager {
      * Update all configured battle channels with current stats
      */
     async updateChannels() {
-        const logger = this.client.logger;
         try {
             // Get all guilds with battlelog channel configured
             const guildsToUpdate = await prisma.guildSettings.findMany({
@@ -85,7 +90,7 @@ class BattleChannelManager {
             });
 
             if (guildsToUpdate.length === 0) {
-                logger.info('No guilds with battlelog configuration found');
+                this.logger.info('No guilds with battlelog configuration found');
                 return;
             }
 
@@ -93,11 +98,11 @@ class BattleChannelManager {
                 try {
                     await this.updateGuildChannel(guild);
                 } catch (error) {
-                    logger.error(`Error updating channel for guild ${guild.guildId}:`, error);
+                    this.logger.error(`Error updating channel for guild ${guild.guildId}:`, error);
                 }
             }
         } catch (error) {
-            logger.error('Error updating battle channels:', error);
+            this.logger.error('Error updating battle channels:', error);
         }
     }
 }

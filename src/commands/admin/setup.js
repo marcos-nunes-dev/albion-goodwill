@@ -8,7 +8,7 @@ const checkMark = '✅';
 const crossMark = '❌';
 const newMark = '🆕';
 
-const command = new Command({
+module.exports = new Command({
     name: 'setup',
     description: 'Configure guild settings',
     category: 'admin',
@@ -16,60 +16,62 @@ const command = new Command({
     cooldown: 5,
     async execute(message, args, handler) {
         const isSlash = message.commandName === 'setup';
-        const guildId = message.guildId;
-
+        
         try {
+            // Get parameters based on command type
+            let guildId, guildName, verifiedRole, tankRole, healerRole, supportRole;
+            let meleeRole, rangedRole, mountRole, prefix;
+            let battlelogChannel;
+
+            if (isSlash) {
+                guildId = message.options.getString('guild_id');
+                guildName = message.options.getString('guild_name');
+                verifiedRole = message.options.getRole('verified_role');
+                tankRole = message.options.getRole('tank_role');
+                healerRole = message.options.getRole('healer_role');
+                supportRole = message.options.getRole('support_role');
+                meleeRole = message.options.getRole('melee_role');
+                rangedRole = message.options.getRole('ranged_role');
+                mountRole = message.options.getRole('mount_role');
+                prefix = message.options.getString('prefix');
+                battlelogChannel = message.options.getChannel('battlelog_channel');
+            }
+
             // Get current settings
-            let settings = await prisma.guildSettings.findUnique({
-                where: { guildId }
+            const settings = await prisma.guildSettings.findUnique({
+                where: { guildId: message.guildId }
             });
 
-            // If no settings exist, create them
-            if (!settings) {
-                settings = await prisma.guildSettings.create({
-                    data: { guildId }
-                });
-            }
+            // Update settings with new values if provided
+            const updateData = {
+                guildId: message.guildId,
+                guildName: guildName || settings?.guildName,
+                albionGuildId: guildId || settings?.albionGuildId,
+                nicknameVerifiedId: verifiedRole?.id || settings?.nicknameVerifiedId,
+                tankRoleId: tankRole?.id || settings?.tankRoleId,
+                healerRoleId: healerRole?.id || settings?.healerRoleId,
+                supportRoleId: supportRole?.id || settings?.supportRoleId,
+                dpsMeleeRoleId: meleeRole?.id || settings?.dpsMeleeRoleId,
+                dpsRangedRoleId: rangedRole?.id || settings?.dpsRangedRoleId,
+                battlemountRoleId: mountRole?.id || settings?.battlemountRoleId,
+                commandPrefix: prefix || settings?.commandPrefix,
+                battlelogChannelId: battlelogChannel?.id || settings?.battlelogChannelId
+            };
 
-            // Get update data from options
-            const updateData = settings;
+            // Update database
+            await prisma.guildSettings.upsert({
+                where: { guildId: message.guildId },
+                update: updateData,
+                create: updateData
+            });
 
-            // Get role and channel references
-            const verifiedRole = updateData.nicknameVerifiedId ? 
-                await message.guild.roles.fetch(updateData.nicknameVerifiedId).catch(() => null) : null;
-            const tankRole = updateData.tankRoleId ? 
-                await message.guild.roles.fetch(updateData.tankRoleId).catch(() => null) : null;
-            const healerRole = updateData.healerRoleId ? 
-                await message.guild.roles.fetch(updateData.healerRoleId).catch(() => null) : null;
-            const supportRole = updateData.supportRoleId ? 
-                await message.guild.roles.fetch(updateData.supportRoleId).catch(() => null) : null;
-            const meleeRole = updateData.dpsMeleeRoleId ? 
-                await message.guild.roles.fetch(updateData.dpsMeleeRoleId).catch(() => null) : null;
-            const rangedRole = updateData.dpsRangedRoleId ? 
-                await message.guild.roles.fetch(updateData.dpsRangedRoleId).catch(() => null) : null;
-            const mountRole = updateData.battlemountRoleId ? 
-                await message.guild.roles.fetch(updateData.battlemountRoleId).catch(() => null) : null;
-            const battlelogChannel = updateData.battlelogChannelId ? 
-                await message.guild.channels.fetch(updateData.battlelogChannelId).catch(() => null) : null;
-
-            // Update battle channel name if it exists
-            if (battlelogChannel) {
-                const stats = await prisma.battleRegistration.findMany({
-                    where: {
-                        guildId: guildId
-                    },
-                    select: {
-                        isVictory: true,
-                        kills: true,
-                        deaths: true
-                    }
-                });
-
+            // Update battle channel name if it exists and was provided
+            if (battlelogChannel && battlelogChannel?.id !== settings?.battlelogChannelId) {
                 const channelManager = new BattleChannelManager(message.client);
-                await channelManager.updateGuildChannel({ guildId, battlelogChannelId: battlelogChannel.id });
+                await channelManager.updateGuildChannel({ guildId: message.guildId, battlelogChannelId: battlelogChannel.id });
             }
 
-            // Create embed
+            // Create response embed
             const setupEmbed = new EmbedBuilder()
                 .setTitle('🛠️ Guild Configuration Status')
                 .addFields([
@@ -77,10 +79,10 @@ const command = new Command({
                         name: 'Required Settings',
                         value: [
                             `Guild ID: ${updateData.albionGuildId ? 
-                                `${updateData.albionGuildId ? newMark : checkMark} ${updateData.albionGuildId}` : 
+                                `${guildId ? newMark : checkMark} ${updateData.albionGuildId}` : 
                                 `${crossMark} Not Set`}`,
                             `Guild Name: ${updateData.guildName ? 
-                                `${updateData.guildName ? newMark : checkMark} ${updateData.guildName}` : 
+                                `${guildName ? newMark : checkMark} ${updateData.guildName}` : 
                                 `${crossMark} Not Set`}`,
                             `Verified Role: ${updateData.nicknameVerifiedId ? 
                                 `${verifiedRole ? newMark : checkMark} <@&${updateData.nicknameVerifiedId}>` : 
@@ -114,7 +116,7 @@ const command = new Command({
                         name: 'Optional Settings',
                         value: [
                             `Command Prefix: ${updateData.commandPrefix ? 
-                                `${updateData.commandPrefix ? newMark : checkMark} ${updateData.commandPrefix}` : 
+                                `${prefix ? newMark : checkMark} ${updateData.commandPrefix}` : 
                                 `${checkMark} Default (!albiongw)`}`,
                             `Battle Log Channel: ${updateData.battlelogChannelId ? 
                                 `${battlelogChannel ? newMark : checkMark} <#${updateData.battlelogChannelId}>` : 
@@ -152,5 +154,3 @@ const command = new Command({
         }
     }
 });
-
-module.exports = command;
