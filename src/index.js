@@ -32,8 +32,6 @@ if (missingVars.length > 0) {
 const guildManager = new GuildManager();
 const voiceTracker = new VoiceTracker(prisma, guildManager);
 const messageTracker = new MessageTracker(prisma, guildManager);
-const battleChannelManager = new BattleChannelManager(getSharedClient());
-const battleSyncManager = new BattleSyncManager();
 const commandHandler = new CommandHandler();
 const selectMenuHandler = new SelectMenuHandler();
 const autocompleteHandler = new AutocompleteHandler();
@@ -74,9 +72,12 @@ async function initializeBot() {
         }
         console.log(`Initialized ${client.guilds.cache.size} servers`);
 
+        // Initialize managers
+        const battleSyncManager = new BattleSyncManager(client);
+        const battleChannelManager = new BattleChannelManager(client);
+
         // Start battle channel manager
-        battleChannelManager.start();
-        logger.info('Battle channel manager started');
+        logger.info('Battle channel manager initialized');
 
         // Set up hourly cron job for battle sync
         cron.schedule('0 * * * *', async () => {

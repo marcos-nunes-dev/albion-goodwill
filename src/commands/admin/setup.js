@@ -34,23 +34,23 @@ const command = new Command({
             // Get update data from options
             const updateData = settings;
 
-            // Get role references
+            // Get role and channel references
             const verifiedRole = updateData.nicknameVerifiedId ? 
-                message.guild.roles.cache.get(updateData.nicknameVerifiedId) : null;
+                await message.guild.roles.fetch(updateData.nicknameVerifiedId).catch(() => null) : null;
             const tankRole = updateData.tankRoleId ? 
-                message.guild.roles.cache.get(updateData.tankRoleId) : null;
+                await message.guild.roles.fetch(updateData.tankRoleId).catch(() => null) : null;
             const healerRole = updateData.healerRoleId ? 
-                message.guild.roles.cache.get(updateData.healerRoleId) : null;
+                await message.guild.roles.fetch(updateData.healerRoleId).catch(() => null) : null;
             const supportRole = updateData.supportRoleId ? 
-                message.guild.roles.cache.get(updateData.supportRoleId) : null;
+                await message.guild.roles.fetch(updateData.supportRoleId).catch(() => null) : null;
             const meleeRole = updateData.dpsMeleeRoleId ? 
-                message.guild.roles.cache.get(updateData.dpsMeleeRoleId) : null;
+                await message.guild.roles.fetch(updateData.dpsMeleeRoleId).catch(() => null) : null;
             const rangedRole = updateData.dpsRangedRoleId ? 
-                message.guild.roles.cache.get(updateData.dpsRangedRoleId) : null;
+                await message.guild.roles.fetch(updateData.dpsRangedRoleId).catch(() => null) : null;
             const mountRole = updateData.battlemountRoleId ? 
-                message.guild.roles.cache.get(updateData.battlemountRoleId) : null;
+                await message.guild.roles.fetch(updateData.battlemountRoleId).catch(() => null) : null;
             const battlelogChannel = updateData.battlelogChannelId ? 
-                message.guild.channels.cache.get(updateData.battlelogChannelId) : null;
+                await message.guild.channels.fetch(updateData.battlelogChannelId).catch(() => null) : null;
 
             // Update battle channel name if it exists
             if (battlelogChannel) {
