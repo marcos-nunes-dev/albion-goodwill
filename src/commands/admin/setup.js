@@ -77,10 +77,10 @@ const command = new Command({
                         name: 'Required Settings',
                         value: [
                             `Guild ID: ${updateData.albionGuildId ? 
-                                `${guildId ? newMark : checkMark} ${updateData.albionGuildId}` : 
+                                `${updateData.albionGuildId ? newMark : checkMark} ${updateData.albionGuildId}` : 
                                 `${crossMark} Not Set`}`,
                             `Guild Name: ${updateData.guildName ? 
-                                `${guildName ? newMark : checkMark} ${updateData.guildName}` : 
+                                `${updateData.guildName ? newMark : checkMark} ${updateData.guildName}` : 
                                 `${crossMark} Not Set`}`,
                             `Verified Role: ${updateData.nicknameVerifiedId ? 
                                 `${verifiedRole ? newMark : checkMark} <@&${updateData.nicknameVerifiedId}>` : 
@@ -114,7 +114,7 @@ const command = new Command({
                         name: 'Optional Settings',
                         value: [
                             `Command Prefix: ${updateData.commandPrefix ? 
-                                `${prefix ? newMark : checkMark} ${updateData.commandPrefix}` : 
+                                `${updateData.commandPrefix ? newMark : checkMark} ${updateData.commandPrefix}` : 
                                 `${checkMark} Default (!albiongw)`}`,
                             `Battle Log Channel: ${updateData.battlelogChannelId ? 
                                 `${battlelogChannel ? newMark : checkMark} <#${updateData.battlelogChannelId}>` : 
