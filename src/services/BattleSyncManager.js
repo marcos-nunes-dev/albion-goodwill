@@ -142,7 +142,7 @@ class BattleSyncManager {
                                 },
                                 {
                                     name: 'Battle Report',
-                                    value: `[View on Battleboard](https://albiononline.com/killboard/battles/${battle.albionId})`,
+                                    value: `[View on Battleboard](https://albionbb.com/battles/${battle.albionId})`,
                                     inline: true
                                 }
                             ],
