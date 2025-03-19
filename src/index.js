@@ -8,7 +8,6 @@ const CommandHandler = require('./handlers/CommandHandler');
 const AutocompleteHandler = require('./handlers/AutocompleteHandler');
 const SelectMenuHandler = require('./handlers/SelectMenuHandler');
 const GuildManager = require('./services/GuildManager');
-const { BattleSyncService } = require('./services/BattleSyncService');
 const { registerSlashCommands } = require('./slashCommands/registerCommands');
 const logger = require('./utils/logger');
 const { getSharedClient } = require('./config/discordClient');
@@ -75,14 +74,7 @@ async function initializeBot() {
         cron.schedule('0 * * * *', async () => {
           try {
             logger.info('Starting hourly battle sync...');
-            const battleSyncService = new BattleSyncService(client);
-            const results = await battleSyncService.syncRecentBattles();
-            logger.info('Battle sync completed', {
-              guildsProcessed: results.guildsProcessed,
-              battlesFound: results.battlesFound,
-              battlesRegistered: results.battlesRegistered,
-              errors: results.errors
-            });
+            logger.info('Battle sync service has been removed');
           } catch (error) {
             logger.error('Error in hourly battle sync:', error);
           }

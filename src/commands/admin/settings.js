@@ -25,7 +25,6 @@ module.exports = new Command({
                             value: [
                                 '`/setup` - Configure all settings at once',
                                 '`/setupcreateroles` - Create required roles',
-                                '`/setsyncbattles enabled:<true/false>` - Enable/disable battle sync',
                                 '`/setguildid id:<id>` - Set Albion guild ID'
                             ].join('\n')
                         }
@@ -48,7 +47,6 @@ module.exports = new Command({
                         value: [
                             `Albion Guild ID: ${settings.albionGuildId ? `✅ \`${settings.albionGuildId}\`` : '❌ Not set'}`,
                             `Guild Name: ${settings.guildName ? `✅ ${settings.guildName}` : '❌ Not set'}`,
-                            `Battle Sync: ${settings.syncAlbionBattles ? '✅ Enabled' : '❌ Disabled'}`,
                             `Command Prefix: ${settings.commandPrefix || '!albiongw'}`
                         ].join('\n')
                     },
@@ -67,7 +65,7 @@ module.exports = new Command({
                     {
                         name: 'Channel Configuration',
                         value: [
-                            `Battle Log Channel: ${settings.battlelogChannelId ? `✅ <#${settings.battlelogChannelId}>` : '❌ Not set'}`
+                            `Battle Log Webhook: ${settings.battlelogWebhook ? '✅ Configured' : '❌ Not set'}`
                         ].join('\n')
                     },
                     {
@@ -75,9 +73,7 @@ module.exports = new Command({
                         value: [
                             '`/setup` - Configure all settings at once',
                             '`/setupcreateroles` - Create required roles',
-                            '`/setsyncbattles enabled:<true/false>` - Enable/disable battle sync',
-                            '`/setguildid id:<id>` - Set Albion guild ID',
-                            '`/setbattlelogchannel channel:#channel` - Set battle log channel'
+                            '`/setguildid id:<id>` - Set Albion guild ID'
                         ].join('\n')
                     }
                 ])

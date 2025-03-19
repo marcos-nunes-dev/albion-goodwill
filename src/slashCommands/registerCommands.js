@@ -146,15 +146,6 @@ const commands = [
                 .setRequired(true)
                 .setAutocomplete(true)
         ),
-    new SlashCommandBuilder()
-        .setName('syncbattlesbydate')
-        .setDescription('Sync battles from Albion API for a specific date')
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-        .addStringOption(option =>
-            option.setName('date')
-                .setDescription('Target date (MM/DD format)')
-                .setRequired(true)
-        ),
 
     // Albion Commands    
     new SlashCommandBuilder()
@@ -345,11 +336,10 @@ const commands = [
                 .setDescription('Role for verified members')
                 .setRequired(false)
         )
-        .addChannelOption(option =>
-            option.setName('battlelog_channel')
-                .setDescription('Channel for battle logs')
+        .addStringOption(option =>
+            option.setName('battlelog_webhook')
+                .setDescription('Discord webhook URL for battle logs (create in channel settings)')
                 .setRequired(false)
-                .addChannelTypes(ChannelType.GuildText)
         )
         .addRoleOption(option =>
             option.setName('tank_role')

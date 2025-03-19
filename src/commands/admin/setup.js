@@ -1,7 +1,7 @@
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
 const { EmbedBuilder, Colors, PermissionFlagsBits } = require('discord.js');
-const { updateBattleLogChannelName } = require('../../utils/battleStats');
+const axios = require('axios');
 
 module.exports = new Command({
     name: 'setup',
@@ -21,7 +21,7 @@ module.exports = new Command({
             // Get parameters based on command type
             let guildId, guildName, verifiedRole, tankRole, healerRole, supportRole;
             let meleeRole, rangedRole, mountRole, prefix;
-            let battlelogChannel;
+            let battlelogWebhook;
 
             if (isSlash) {
                 guildId = message.options.getString('guild_id');
@@ -34,7 +34,22 @@ module.exports = new Command({
                 rangedRole = message.options.getRole('ranged_role');
                 mountRole = message.options.getRole('mount_role');
                 prefix = message.options.getString('prefix');
-                battlelogChannel = message.options.getChannel('battlelog_channel');
+                battlelogWebhook = message.options.getString('battlelog_webhook');
+            }
+
+            // Validate webhook URL if provided
+            if (battlelogWebhook && !battlelogWebhook.startsWith('https://discord.com/api/webhooks/')) {
+                const errorEmbed = new EmbedBuilder()
+                    .setTitle('❌ Invalid Webhook URL')
+                    .setDescription('Please provide a valid Discord webhook URL.')
+                    .setColor(Colors.Red)
+                    .setTimestamp();
+
+                await message.reply({
+                    embeds: [errorEmbed],
+                    ephemeral: true
+                });
+                return;
             }
 
             // Get current settings
@@ -55,7 +70,7 @@ module.exports = new Command({
                 dpsRangedRoleId: rangedRole?.id || settings?.dpsRangedRoleId,
                 battlemountRoleId: mountRole?.id || settings?.battlemountRoleId,
                 commandPrefix: prefix || settings?.commandPrefix,
-                battlelogChannelId: battlelogChannel?.id || settings?.battlelogChannelId
+                battlelogWebhook: battlelogWebhook || settings?.battlelogWebhook
             };
 
             // Update database
@@ -65,34 +80,37 @@ module.exports = new Command({
                 create: updateData
             });
 
-            // If battle log channel is set and it's a new channel, configure it
-            if (battlelogChannel && battlelogChannel.id !== settings?.battlelogChannelId) {
-                // Set proper permissions
-                await battlelogChannel.permissionOverwrites.set([
-                    {
-                        id: message.guild.roles.everyone.id,
-                        deny: [PermissionFlagsBits.SendMessages],
-                        allow: [PermissionFlagsBits.ViewChannel]
-                    },
-                    {
-                        id: message.client.user.id,
-                        allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.ViewChannel]
+            // Test webhook if it's new or changed
+            if (battlelogWebhook && battlelogWebhook !== settings?.battlelogWebhook) {
+                try {
+                    const welcomeEmbed = new EmbedBuilder()
+                        .setTitle('📜 Battle Logs Webhook')
+                        .setDescription('This webhook has been configured to receive battle logs.')
+                        .setColor(Colors.Blue)
+                        .setTimestamp();
+
+                    await axios.post(battlelogWebhook, {
+                        embeds: [welcomeEmbed]
+                    });
+                } catch (error) {
+                    console.error('Error testing webhook:', error);
+                    const errorEmbed = new EmbedBuilder()
+                        .setTitle('⚠️ Webhook Warning')
+                        .setDescription('The webhook was saved but there was an error testing it. Please verify the URL is correct.')
+                        .setColor(Colors.Yellow)
+                        .setTimestamp();
+
+                    if (isSlash) {
+                        await message.followUp({
+                            embeds: [errorEmbed],
+                            ephemeral: true
+                        });
+                    } else {
+                        await message.reply({
+                            embeds: [errorEmbed]
+                        });
                     }
-                ]);
-
-                // Send welcome message
-                const welcomeEmbed = new EmbedBuilder()
-                    .setTitle('📜 Battle Logs Channel')
-                    .setDescription('This channel will keep track of all registered battles.\nThe channel name will be automatically updated with current W/L and K/D stats.')
-                    .setColor(Colors.Blue)
-                    .setTimestamp();
-
-                await battlelogChannel.send({ embeds: [welcomeEmbed] });
-            }
-
-            // If battle log channel is set, update its name immediately
-            if (updateData.battlelogChannelId) {
-                await updateBattleLogChannelName(message.guild, updateData.battlelogChannelId);
+                }
             }
 
             // Create response embed
@@ -146,9 +164,9 @@ module.exports = new Command({
                             `Command Prefix: ${updateData.commandPrefix ? 
                                 `${prefix ? newMark : checkMark} ${updateData.commandPrefix}` : 
                                 `${checkMark} Default (!albiongw)`}`,
-                            `Battle Log Channel: ${updateData.battlelogChannelId ? 
-                                `${battlelogChannel ? newMark : checkMark} <#${updateData.battlelogChannelId}>` : 
-                                `${crossMark} Not Set`}`,
+                            `Battle Log Webhook: ${updateData.battlelogWebhook ? 
+                                `${battlelogWebhook ? newMark : checkMark} Configured` : 
+                                `${crossMark} Not set`}`,
                             `Competitor Guilds: ${settings?.competitorIds?.length ? 
                                 `${checkMark} ${settings.competitorIds.length} set` : 
                                 `${crossMark} None set`} (Use /competitors to manage)`
