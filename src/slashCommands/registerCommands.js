@@ -42,10 +42,7 @@ const commands = [
                 .setDescription('Role to exclude from the check (e.g., whitelist role)')
                 .setRequired(false)
         ),
-    new SlashCommandBuilder()
-        .setName('checkactivity')
-        .setDescription('Check for missing activity records in voice channels')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+
     new SlashCommandBuilder()
         .setName('competitors')
         .setDescription('Manage competitors to compare your guild against it')
@@ -62,7 +59,7 @@ const commands = [
         .addStringOption(option =>
             option.setName('guild_id')
                 .setDescription('Competitor guild id (required for add/remove)')
-                .setRequired(true)
+                .setRequired(false)
         ),
     new SlashCommandBuilder()
         .setName('checkregistrations')
@@ -154,7 +151,7 @@ const commands = [
     // Albion Commands    
     new SlashCommandBuilder()
         .setName('pingpvp')
-        .setDescription('Creates a PVP event message with composition template (v2)')
+        .setDescription('Creates a PVP event - use the builder https://albion-goodwill-web.vercel.app/ping-composition')
         .addRoleOption(option =>
             option.setName('role')
                 .setDescription('Role to ping')

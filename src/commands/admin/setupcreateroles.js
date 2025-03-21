@@ -2,6 +2,9 @@ const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
 const { EmbedBuilder, Colors, PermissionFlagsBits, ButtonBuilder, ButtonStyle, ActionRowBuilder, ChannelType } = require('discord.js');
 
+// Constants
+const DEFAULT_BATTLELOG_CHANNEL = '🏆0-0🩸00🎯0';
+
 module.exports = new Command({
     name: 'setupcreateroles',
     description: 'Create and configure all required roles for the bot',
@@ -9,7 +12,14 @@ module.exports = new Command({
     permissions: ['ADMINISTRATOR'],
     cooldown: 10,
     async execute(message, args, handler) {
+        // Validate guild permissions
+        if (!message.guild) {
+            throw new Error('This command can only be used in a server.');
+        }
+
         const isSlash = message.commandName === 'setupcreateroles';
+        const guildId = message.guildId;
+        const guild = message.guild;
         
         try {
             // Send warning and confirmation message
@@ -21,7 +31,9 @@ module.exports = new Command({
                     '• The required roles don\'t exist yet',
                     '• You want to create a fresh set of roles',
                     '',
-                    '**The following roles will be created:**',
+                    '**The following will be created:**',
+                    '',
+                    '**Roles:**',
                     '• 🛡️ Tank',
                     '• 🏹 DPS Ranged',
                     '• ⚔️ DPS Melee',
@@ -30,7 +42,10 @@ module.exports = new Command({
                     '• 🐎 Battlemount',
                     '• ✅ Verified',
                     '',
-                    '**Note:** If these roles already exist, new ones will be created alongside them.',
+                    '**Channel:**',
+                    `• 📜 #${DEFAULT_BATTLELOG_CHANNEL} (with webhook)`,
+                    '',
+                    '**Note:** If any of these already exist, new ones will be created alongside them.',
                     'Make sure this is what you want to do!'
                 ].join('\n'))
                 .setColor(Colors.Yellow)
@@ -60,7 +75,7 @@ module.exports = new Command({
             // Create a button interaction collector
             const collector = warningMessage.createMessageComponentCollector({
                 filter: i => i.user.id === message.member.id,
-                time: 30000,
+                time: 60000, // 1 minute timeout
                 max: 1
             });
 
@@ -138,13 +153,54 @@ module.exports = new Command({
                         }
                     ];
 
+                    // Create battlelog channel first
+                    let battlelogChannel;
+                    try {
+                        battlelogChannel = await interaction.guild.channels.create({
+                            name: DEFAULT_BATTLELOG_CHANNEL,
+                            type: ChannelType.GuildText,
+                            reason: 'Albion Goodwill battlelog channel',
+                            position: 0 // This will attempt to place it at the top
+                        });
+
+                        // Create webhook for the battlelog channel
+                        const webhook = await battlelogChannel.createWebhook({
+                            name: 'Albion Goodwill',
+                            reason: 'Webhook for battle logs'
+                        });
+
+                        // Update database with webhook URL and channel ID
+                        await prisma.guildSettings.upsert({
+                            where: { guildId: interaction.guild.id },
+                            update: {
+                                guildName: interaction.guild.name,
+                                battlelogWebhook: webhook.url,
+                                battlelogChannelId: battlelogChannel.id,
+                                commandPrefix: '!albiongw',
+                                syncAlbionNickname: false
+                            },
+                            create: {
+                                guildId: interaction.guild.id,
+                                guildName: interaction.guild.name,
+                                battlelogWebhook: webhook.url,
+                                battlelogChannelId: battlelogChannel.id,
+                                commandPrefix: '!albiongw',
+                                syncAlbionNickname: false,
+                                competitorIds: []
+                            }
+                        });
+                    } catch (error) {
+                        console.error('Error creating battlelog channel or webhook:', error);
+                    }
+
                     const createdRoles = [];
+                    const createdRoleObjects = [];
                     const errors = [];
 
                     // Create roles and update settings
                     for (const roleConfig of rolesToCreate) {
                         try {
-                            const role = await message.guild.roles.create({
+                            const role = await guild.roles.create({
                                 name: roleConfig.name,
                                 color: roleConfig.color,
                                 reason: roleConfig.reason,
@@ -152,39 +208,30 @@ module.exports = new Command({
                             });
 
                             await prisma.guildSettings.upsert({
-                                where: { guildId: message.guildId },
+                                where: { guildId: guildId },
                                 update: {
                                     [roleConfig.settingField]: role.id,
-                                    guildName: message.guild.name
+                                    guildName: guild.name
                                 },
                                 create: {
-                                    guildId: message.guildId,
-                                    guildName: message.guild.name,
-                                    [roleConfig.settingField]: role.id
+                                    guildId: guildId,
+                                    guildName: guild.name,
+                                    [roleConfig.settingField]: role.id,
+                                    commandPrefix: '!albiongw',
+                                    syncAlbionNickname: false,
+                                    competitorIds: []
                                 }
                             });
 
                             createdRoles.push(roleConfig.name);
+                            createdRoleObjects.push(role);
                         } catch (error) {
                             console.error(`Error creating role ${roleConfig.name}:`, error);
                             errors.push(roleConfig.name);
                         }
                     }
 
-                    await prisma.guildSettings.update({
-                        where: { guildId: message.guildId },
-                        data: {
-                            guildId: message.guildId,
-                            guildName: message.guild.name,
-                            tankRoleId: rolesToCreate[0].settingField,
-                            healerRoleId: rolesToCreate[3].settingField,
-                            supportRoleId: rolesToCreate[4].settingField,
-                            dpsMeleeRoleId: rolesToCreate[2].settingField,
-                            dpsRangedRoleId: rolesToCreate[1].settingField,
-                            battlemountRoleId: rolesToCreate[5].settingField,
-                            nicknameVerifiedId: rolesToCreate[6].settingField
-                        }
-                    });
+                    // No need for this update as we're already using upsert for each role
 
                     // Create response embed
                     const setupEmbed = new EmbedBuilder()
@@ -192,10 +239,15 @@ module.exports = new Command({
                         .setColor(errors.length === 0 ? Colors.Green : Colors.Yellow)
                         .setTimestamp();
 
+
+
                     if (createdRoles.length > 0) {
                         setupEmbed.addFields({
                             name: '✅ Created Roles',
-                            value: createdRoles.map(role => `• ${role}`).join('\n')
+                            value: createdRoles.map((roleName, index) => {
+                                const roleId = createdRoleObjects[index]?.id;
+                                return roleId ? `• <@&${roleId}> (${roleName})` : `• ${roleName}`;
+                            }).join('\n')
                         });
                     }
 
@@ -206,14 +258,22 @@ module.exports = new Command({
                         });
                     }
 
-                    setupEmbed.addFields({
-                        name: 'Next Steps',
-                        value: [
-                            '1. Use `/setguildid` to set your Albion guild ID',
-                            '2. Use `/competitors add` to add competitor guilds',
-                            '3. Organize the role hierarchy as needed'
-                        ].join('\n')
-                    });
+                    setupEmbed.addFields(
+                        {
+                            name: '📜 Battlelog Setup',
+                            value: battlelogChannel 
+                                ? `✅ Channel ${battlelogChannel} created with webhook successfully!` 
+                                : '❌ Failed to create channel and webhook'
+                        },
+                        {
+                            name: '📋 Next Steps',
+                            value: [
+                                '1. Use `/setup` to set your Albion guild ID (must have so the battleboard channel can works)',
+                                '2. Use `/competitors add` to add competitor guilds',
+                                '3. Organize the role hierarchy as needed',
+                            ].join('\n')
+                        }
+                    );
 
                     await interaction.editReply({ embeds: [setupEmbed] });
                 }
@@ -238,11 +298,12 @@ module.exports = new Command({
             console.error('Error in setupcreateroles command:', error);
             const errorEmbed = new EmbedBuilder()
                 .setTitle('❌ Error')
-                .setDescription('An error occurred while creating roles.')
+                .setDescription(`An error occurred while setting up the server:\n\`\`\`\n${error.message}\n\`\`\`\nPlease try again or contact support if the issue persists.`)
                 .setColor(Colors.Red)
                 .setTimestamp();
 
-            await message.reply({ embeds: [errorEmbed] });
+            const replyMethod = isSlash ? message.editReply : message.reply;
+            await replyMethod.call(message, { embeds: [errorEmbed] });
         }
     }
 }); 

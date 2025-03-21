@@ -439,7 +439,7 @@ class CommandHandler {
       if (!this.checkCooldown(interaction, command)) return;
 
       // Execute command
-      await command.execute(interaction, null, true);
+      await command.execute(interaction, null, this);
     } catch (error) {
       console.error('Error handling command:', error);
       const errorMessage = {

@@ -7,7 +7,7 @@ const command = new Command({
     name: 'competitors',
     description: 'Manage competitor guilds',
     category: 'admin',
-    usage: '<add|remove|list> [guild_id]',
+    usage: 'list | add <guild_id> | remove <guild_id>',
     permissions: ['ADMINISTRATOR'],
     cooldown: 5,
     async execute(source, args) {
@@ -24,8 +24,42 @@ const command = new Command({
             guildId = args[1];
         }
         
-        if (!action || action === 'list') {
+        if (!action) {
+            const embed = new EmbedBuilder()
+                .setTitle('Missing Action')
+                .setDescription('Please specify an action to perform')
+                .addFields(
+                    { 
+                        name: 'Available Commands', 
+                        value: [
+                            '```',
+                            'list   - View all competitor guilds',
+                            'add    - Add a new competitor guild',
+                            'remove - Remove a competitor guild',
+                            '```'
+                        ].join('\n')
+                    }
+                )
+                .setColor(Colors.Yellow)
+                .setTimestamp()
+                .setFooter({ text: 'Use /help competitors for more information' });
+            await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
+            return;
+        }
+
+        if (action === 'list') {
             await listCompetitors(source);
+            return;
+        }
+
+        // Require guild_id for add and remove actions
+        if (!guildId && (action === 'add' || action === 'remove')) {
+            const embed = new EmbedBuilder()
+                .setTitle('Missing Guild ID')
+                .setDescription('You must provide a guild ID when using add or remove')
+                .setColor(Colors.Red)
+                .setTimestamp();
+            await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
             return;
         }
 
