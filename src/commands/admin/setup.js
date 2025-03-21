@@ -20,10 +20,11 @@ module.exports = new Command({
         try {
             // Get parameters based on command type
             let guildId, guildName, verifiedRole, tankRole, healerRole, supportRole;
-            let meleeRole, rangedRole, mountRole, prefix;
+            let meleeRole, rangedRole, mountRole, prefix, language;
             let battlelogChannel, webhookUrl;
 
             if (isSlash) {
+                language = message.options.getString('language');
                 guildId = message.options.getString('guild_id');
                 guildName = message.options.getString('guild_name');
                 verifiedRole = message.options.getRole('verified_role');
@@ -47,6 +48,7 @@ module.exports = new Command({
             const updateData = {
                 guildId: message.guildId,
                 guildName: guildName || settings?.guildName,
+                language: language || settings?.language || 'en',
                 albionGuildId: guildId || settings?.albionGuildId,
                 nicknameVerifiedId: verifiedRole?.id || settings?.nicknameVerifiedId,
                 tankRoleId: tankRole?.id || settings?.tankRoleId,
@@ -117,6 +119,9 @@ module.exports = new Command({
                     {
                         name: 'Optional Settings',
                         value: [
+                            `Language: ${updateData.language ? 
+                                `${language ? newMark : checkMark} ${updateData.language === 'pt' ? 'Português' : updateData.language === 'es' ? 'Español' : 'English'}` : 
+                                `${checkMark} Default (English)`}`,
                             `Command Prefix: ${updateData.commandPrefix ? 
                                 `${prefix ? newMark : checkMark} ${updateData.commandPrefix}` : 
                                 `${checkMark} Default (!albiongw)`}`,

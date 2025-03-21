@@ -49,6 +49,7 @@ model GuildSettings {
   guildName          String
   afkChannelId       String?
   commandPrefix      String   @default("!albiongw")
+  language           String   @default("en")
   albionGuildId      String?
   competitorIds      String[] @default([])
   tankRoleId         String?

@@ -4,6 +4,7 @@ const { join } = require('path');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const { formatDuration, getWeekStart, getMonthStart } = require('../utils/timeUtils');
+const languageManager = require('../utils/languageUtils');
 const { fetchGuildStats, getMainRole, calculatePlayerScores } = require('../utils/albionApi');
 const axios = require('axios');
 const { EmbedBuilder, Colors } = require('discord.js');
@@ -41,6 +42,13 @@ class CommandHandler {
         this.commands.set(command.name, command);
       }
     }
+  }
+
+  async getGuildLanguage(guildId) {
+    const settings = await prisma.guildSettings.findUnique({
+      where: { guildId }
+    });
+    return settings?.language || 'en';
   }
 
   async getGuildPrefix(guildId) {

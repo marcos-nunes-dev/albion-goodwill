@@ -1,6 +1,7 @@
 const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
 const { EmbedBuilder, Colors } = require('discord.js');
+const languageManager = require('../../utils/languageUtils');
 
 module.exports = new Command({
     name: 'checkregistrations',
@@ -16,22 +17,24 @@ module.exports = new Command({
                 message.options.getRole('role') : 
                 message.mentions.roles.first();
 
+            const language = await handler.getGuildLanguage(message.guild.id);
+
             if (!role) {
                 const errorEmbed = new EmbedBuilder()
-                    .setTitle('⚠️ Missing Information')
-                    .setDescription('Please mention the role to check registrations from.')
+                    .setTitle(languageManager.translate('commands.checkregistrations.missingRole.title', language))
+                    .setDescription(languageManager.translate('commands.checkregistrations.missingRole.description', language))
                     .addFields([
                         {
-                            name: 'Usage',
+                            name: languageManager.translate('commands.checkregistrations.missingRole.usage', language),
                             value: isSlash ? 
-                                '`/checkregistrations role:@role`' : 
-                                '`!albiongw checkregistrations @role`'
+                                `\`${languageManager.translate('commands.checkregistrations.missingRole.slashUsage', language)}\`` : 
+                                `\`${languageManager.translate('commands.checkregistrations.missingRole.prefixUsage', language)}\``
                         },
                         {
-                            name: 'Example',
+                            name: languageManager.translate('commands.checkregistrations.missingRole.example', language),
                             value: isSlash ? 
-                                '`/checkregistrations role:@Members`' : 
-                                '`!albiongw checkregistrations @Members`'
+                                `\`${languageManager.translate('commands.checkregistrations.missingRole.slashExample', language)}\`` : 
+                                `\`${languageManager.translate('commands.checkregistrations.missingRole.prefixExample', language)}\``
                         }
                     ])
                     .setColor(Colors.Yellow)
@@ -65,8 +68,8 @@ module.exports = new Command({
 
             if (unregisteredMembers.length === 0) {
                 const successEmbed = new EmbedBuilder()
-                    .setTitle('✅ All Members Registered')
-                    .setDescription(`All members with the ${role.name} role are registered!`)
+                    .setTitle(languageManager.translate('commands.checkregistrations.allRegistered.title', language))
+                    .setDescription(languageManager.translate('commands.checkregistrations.allRegistered.description', language, { roleName: role.name }))
                     .setColor(Colors.Green)
                     .setTimestamp();
 
@@ -96,8 +99,8 @@ module.exports = new Command({
             }
 
             const resultEmbed = new EmbedBuilder()
-                .setTitle('⚠️ Unregistered Members Found')
-                .setDescription(`The following members in ${role.name} are not registered:`)
+                .setTitle(languageManager.translate('commands.checkregistrations.unregistered.title', language))
+                .setDescription(languageManager.translate('commands.checkregistrations.unregistered.description', language, { roleName: role.name }))
                 .setColor(Colors.Yellow)
                 .setTimestamp()
                 .setFooter({

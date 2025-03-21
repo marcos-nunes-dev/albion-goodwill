@@ -47,6 +47,7 @@ module.exports = new Command({
                         value: [
                             `Albion Guild ID: ${settings.albionGuildId ? `✅ \`${settings.albionGuildId}\`` : '❌ Not set'}`,
                             `Guild Name: ${settings.guildName ? `✅ ${settings.guildName}` : '❌ Not set'}`,
+                            `Language: ${settings.language ? `✅ ${settings.language === 'pt' ? 'Português' : settings.language === 'es' ? 'Español' : 'English'}` : '✅ English (Default)'}`,
                             `Command Prefix: ${settings.commandPrefix || '!albiongw'}`
                         ].join('\n')
                     },

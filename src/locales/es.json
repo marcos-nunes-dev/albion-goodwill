@@ -1,0 +1,106 @@
+{
+  "errors": {
+    "missingPermissions": "No tienes permiso para usar este comando.",
+    "cooldown": "Por favor, espera {time} segundos antes de usar este comando nuevamente.",
+    "generalError": "Ocurrió un error al ejecutar este comando."
+  },
+  "common": {
+    "success": "¡Éxito!",
+    "error": "¡Error!",
+    "loading": "Cargando..."
+  },
+  "commands": {
+    "ping": {
+      "checking": "Comprobando...",
+      "response": "¡Pong! 🏓\nLatencia: {latency}ms\nLatencia de API: {apiLatency}ms",
+      "error": "¡Error al comprobar la latencia!"
+    },
+    "competitors": {
+      "missingAction": {
+        "title": "Acción Faltante",
+        "description": "Por favor, especifica una acción para ejecutar",
+        "availableCommands": "Comandos Disponibles",
+        "commands": [
+          "list   - Ver todos los gremios competidores",
+          "add    - Añadir un nuevo gremio competidor",
+          "remove - Eliminar un gremio competidor"
+        ],
+        "footer": "Usa /help competitors para más información"
+      },
+      "list": {
+        "title": "Gremios Competidores",
+        "noCompetitors": "Aún no se han añadido gremios competidores.",
+        "currentCompetitors": "Gremios competidores actuales:",
+        "guildEntry": "{guildName} (`{guildId}`)"
+      },
+      "add": {
+        "missingId": {
+          "title": "ID del Gremio Faltante",
+          "description": "Por favor, proporciona el ID del gremio para añadir como competidor"
+        },
+        "alreadyAdded": {
+          "title": "Ya Añadido",
+          "description": "Este gremio ya está en la lista de competidores"
+        },
+        "invalidId": {
+          "title": "ID de Gremio Inválido",
+          "description": "No se pudo encontrar un gremio con el ID proporcionado"
+        },
+        "success": {
+          "title": "Competidor Añadido",
+          "description": "Se ha añadido exitosamente {guildName} a la lista de competidores"
+        },
+        "error": {
+          "title": "Error",
+          "description": "Ocurrió un error al añadir el gremio competidor"
+        },
+        "invalidGuild": {
+          "title": "Gremio Inválido",
+          "description": "Este gremio existe pero no tiene datos recientes de batalla."
+        },
+        "limitReached": {
+          "title": "Límite Alcanzado",
+          "description": "Solo puedes rastrear hasta 5 gremios competidores."
+        }
+      },
+      "remove": {
+        "missingId": {
+          "title": "ID del Gremio Faltante",
+          "description": "Por favor, proporciona el ID del gremio para eliminar de los competidores"
+        },
+        "notFound": {
+          "title": "No Encontrado",
+          "description": "Este gremio no está en la lista de competidores"
+        },
+        "success": {
+          "title": "Competidor Eliminado",
+          "description": "Se ha eliminado exitosamente el gremio de la lista de competidores"
+        },
+        "error": {
+          "title": "Error",
+          "description": "Ocurrió un error al eliminar el gremio competidor"
+        }
+      }
+    },
+    "checkregistrations": {
+      "missingRole": {
+        "title": "⚠️ Información Faltante",
+        "description": "Por favor, menciona el rol para verificar los registros.",
+        "usage": "Uso",
+        "example": "Ejemplo",
+        "slashUsage": "/checkregistrations role:@rol",
+        "prefixUsage": "!albiongw checkregistrations @rol",
+        "slashExample": "/checkregistrations role:@Miembros",
+        "prefixExample": "!albiongw checkregistrations @Miembros"
+      },
+      "allRegistered": {
+        "title": "✅ Todos los Miembros Registrados",
+        "description": "¡Todos los miembros con el rol {roleName} están registrados!"
+      },
+      "unregistered": {
+        "title": "⚠️ Miembros No Registrados Encontrados",
+        "description": "Los siguientes miembros en el rol {roleName} no están registrados:"
+      }
+    }
+  }
+}

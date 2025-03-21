@@ -2,6 +2,7 @@ const Command = require('../../structures/Command');
 const prisma = require('../../config/prisma');
 const { EmbedBuilder, Colors } = require('discord.js');
 const axios = require('axios');
+const languageManager = require('../../utils/languageUtils');
 
 const command = new Command({
     name: 'competitors',
@@ -10,10 +11,10 @@ const command = new Command({
     usage: 'list | add <guild_id> | remove <guild_id>',
     permissions: ['ADMINISTRATOR'],
     cooldown: 5,
-    async execute(source, args) {
+    async execute(source, args, handler) {
         // Handle both message commands and slash commands
         const isInteraction = source.commandName !== undefined;
-        
+
         // Get action and guildId based on command type
         let action, guildId;
         if (isInteraction) {
@@ -23,41 +24,41 @@ const command = new Command({
             action = args[0]?.toLowerCase();
             guildId = args[1];
         }
-        
+
+        const language = await handler.getGuildLanguage(source.guild.id);
+
         if (!action) {
             const embed = new EmbedBuilder()
-                .setTitle('Missing Action')
-                .setDescription('Please specify an action to perform')
+                .setTitle(languageManager.translate('commands.competitors.missingAction.title', language))
+                .setDescription(languageManager.translate('commands.competitors.missingAction.description', language))
                 .addFields(
-                    { 
-                        name: 'Available Commands', 
+                    {
+                        name: languageManager.translate('commands.competitors.missingAction.availableCommands', language),
                         value: [
                             '```',
-                            'list   - View all competitor guilds',
-                            'add    - Add a new competitor guild',
-                            'remove - Remove a competitor guild',
+                            ...languageManager.translate('commands.competitors.missingAction.commands', language),
                             '```'
                         ].join('\n')
                     }
                 )
                 .setColor(Colors.Yellow)
                 .setTimestamp()
-                .setFooter({ text: 'Use /help competitors for more information' });
+                .setFooter({ text: languageManager.translate('commands.competitors.missingAction.footer', language) });
             await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
             return;
         }
 
         if (action === 'list') {
-            await listCompetitors(source);
+            await listCompetitors(source, handler);
             return;
         }
 
         // Require guild_id for add and remove actions
         if (!guildId && (action === 'add' || action === 'remove')) {
             const embed = new EmbedBuilder()
-                .setTitle('Missing Guild ID')
-                .setDescription('You must provide a guild ID when using add or remove')
-                .setColor(Colors.Red)
+                .setTitle(languageManager.translate(`commands.competitors.${action}.missingId.title`, language))
+                .setDescription(languageManager.translate(`commands.competitors.${action}.missingId.description`, language))
+                .setColor(Colors.Yellow)
                 .setTimestamp();
             await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
             return;
@@ -65,39 +66,38 @@ const command = new Command({
 
         switch (action.toLowerCase()) {
             case 'add':
-                await handleAddCompetitor(source, guildId);
+                await handleAddCompetitor(source, guildId, handler);
                 break;
 
             case 'remove':
-                await handleRemoveCompetitor(source, guildId);
+                await handleRemoveCompetitor(source, guildId, handler);
                 break;
 
             default:
                 const embed = new EmbedBuilder()
-                    .setTitle('Invalid Subcommand')
-                    .setDescription('Please use one of the following subcommands:')
+                    .setTitle(languageManager.translate('commands.competitors.missingAction.title', language))
+                    .setDescription(languageManager.translate('commands.competitors.missingAction.description', language))
                     .addFields(
-                        { 
-                            name: 'Available Commands', 
+                        {
+                            name: languageManager.translate('commands.competitors.missingAction.availableCommands', language),
                             value: [
                                 '```',
-                                'list   - View all competitor guilds',
-                                'add    - Add a new competitor guild',
-                                'remove - Remove a competitor guild',
+                                ...languageManager.translate('commands.competitors.missingAction.commands', language),
                                 '```'
                             ].join('\n')
                         }
                     )
                     .setColor(Colors.Yellow)
                     .setTimestamp()
-                    .setFooter({ text: 'Use /help competitors for more information' });
+                    .setFooter({ text: languageManager.translate('commands.competitors.missingAction.footer', language) });
                 await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
         }
     }
 });
 
-async function handleAddCompetitor(source, competitorId) {
+async function handleAddCompetitor(source, competitorId, handler) {
     const isInteraction = source.commandName !== undefined;
+    const language = await handler.getGuildLanguage(source.guild.id);
     try {
         // First, verify if the guild exists by fetching from the API
         let response;
@@ -107,29 +107,18 @@ async function handleAddCompetitor(source, competitorId) {
             // Handle API errors specifically
             if (apiError.response?.status === 404) {
                 const embed = new EmbedBuilder()
-                    .setTitle('Guild Not Found')
-                    .setDescription([
-                        '❌ This guild ID does not exist.',
-                        '',
-                        '**How to get the correct Guild ID:**',
-                        '1. Go to https://albionbb.com',
-                        '2. Search for your guild',
-                        '3. Copy the ID from the URL',
-                        '',
-                        '**Example:**',
-                        'For URL: `https://albionbb.com/guild/hZNTkb_CTcexTNajA0TOsw`',
-                        'The ID would be: `hZNTkb_CTcexTNajA0TOsw`'
-                    ].join('\n'))
+                    .setTitle(languageManager.translate('commands.competitors.add.invalidId.title', language))
+                    .setDescription(languageManager.translate('commands.competitors.add.invalidId.description', language))
                     .setColor(Colors.Red)
                     .setTimestamp();
                 await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
                 return;
             }
-            
+
             // Handle other API errors
             const embed = new EmbedBuilder()
-                .setTitle('API Error')
-                .setDescription('Failed to connect to Albion API. Please try again later.')
+                .setTitle(languageManager.translate('commands.competitors.add.error.title', language))
+                .setDescription(languageManager.translate('commands.competitors.add.error.description', language))
                 .setColor(Colors.Red)
                 .setTimestamp();
             await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
@@ -140,8 +129,8 @@ async function handleAddCompetitor(source, competitorId) {
 
         if (!Array.isArray(guildData) || guildData.length === 0) {
             const embed = new EmbedBuilder()
-                .setTitle('Invalid Guild')
-                .setDescription('This guild exists but has no recent battle data.')
+                .setTitle(languageManager.translate('commands.competitors.add.invalidGuild.title', language))
+                .setDescription(languageManager.translate('commands.competitors.add.invalidGuild.description', language))
                 .setColor(Colors.Yellow)
                 .setTimestamp();
             await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
@@ -158,8 +147,8 @@ async function handleAddCompetitor(source, competitorId) {
 
         if (settings.competitorIds.includes(competitorId)) {
             const embed = new EmbedBuilder()
-                .setTitle('Already Tracking')
-                .setDescription(`The guild "${guildName}" is already being tracked.`)
+                .setTitle(languageManager.translate('commands.competitors.add.alreadyAdded.title', language))
+                .setDescription(languageManager.translate('commands.competitors.add.alreadyAdded.description', language))
                 .setColor(Colors.Yellow)
                 .setTimestamp();
             await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
@@ -168,8 +157,8 @@ async function handleAddCompetitor(source, competitorId) {
 
         if (settings.competitorIds.length >= 5) {
             const embed = new EmbedBuilder()
-                .setTitle('Limit Reached')
-                .setDescription('You can only track up to 5 competitor guilds.')
+                .setTitle(languageManager.translate('commands.competitors.add.limitReached.title', language))
+                .setDescription(languageManager.translate('commands.competitors.add.limitReached.description', language))
                 .setColor(Colors.Red)
                 .setTimestamp();
             await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
@@ -187,8 +176,8 @@ async function handleAddCompetitor(source, competitorId) {
         });
 
         const embed = new EmbedBuilder()
-            .setTitle('Competitor Added')
-            .setDescription(`Successfully added "${guildName}" ${allianceName ? `[${allianceName}]` : ''} to competitor tracking.`)
+            .setTitle(languageManager.translate('commands.competitors.add.success.title', language))
+            .setDescription(languageManager.translate('commands.competitors.add.success.description', language, { guildName: `${guildName}${allianceName ? ` [${allianceName}]` : ''}` }))
             .setColor(Colors.Green)
             .setTimestamp();
         await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
@@ -196,16 +185,17 @@ async function handleAddCompetitor(source, competitorId) {
     } catch (error) {
         console.error('Error adding competitor:', error);
         const embed = new EmbedBuilder()
-            .setTitle('Error')
-            .setDescription('An error occurred while adding the competitor guild.')
+            .setTitle(languageManager.translate('commands.competitors.add.error.title', language))
+            .setDescription(languageManager.translate('commands.competitors.add.error.description', language))
             .setColor(Colors.Red)
             .setTimestamp();
         await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
     }
 }
 
-async function handleRemoveCompetitor(source, competitorId) {
+async function handleRemoveCompetitor(source, competitorId, handler) {
     const isInteraction = source.commandName !== undefined;
+    const language = await handler.getGuildLanguage(source.guild.id);
     try {
         const settings = await prisma.guildSettings.findUnique({
             where: { guildId: isInteraction ? source.guildId : source.guild.id }
@@ -213,12 +203,8 @@ async function handleRemoveCompetitor(source, competitorId) {
 
         if (!settings.competitorIds.includes(competitorId)) {
             const embed = new EmbedBuilder()
-                .setTitle('Not Found')
-                .setDescription('This guild is not in your competitors list.')
-                .addFields({
-                    name: 'Guild ID',
-                    value: `\`${competitorId}\``
-                })
+                .setTitle(languageManager.translate('commands.competitors.remove.notFound.title', language))
+                .setDescription(languageManager.translate('commands.competitors.remove.notFound.description', language))
                 .setColor(Colors.Yellow)
                 .setTimestamp();
             await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
@@ -235,28 +221,25 @@ async function handleRemoveCompetitor(source, competitorId) {
         });
 
         const embed = new EmbedBuilder()
-            .setTitle('Competitor Removed')
-            .setDescription('Successfully removed the competitor guild from your tracking list.')
-            .addFields(
-                { name: 'Guild ID', value: `\`${competitorId}\``, inline: true },
-                { name: 'Total Competitors', value: `${settings.competitorIds.length - 1}/5`, inline: true }
-            )
+            .setTitle(languageManager.translate('commands.competitors.remove.success.title', language))
+            .setDescription(languageManager.translate('commands.competitors.remove.success.description', language))
             .setColor(Colors.Green)
             .setTimestamp();
         await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
     } catch (error) {
         console.error('Error removing competitor:', error);
         const embed = new EmbedBuilder()
-            .setTitle('Error')
-            .setDescription('An error occurred while removing the competitor guild.')
+            .setTitle(languageManager.translate('commands.competitors.remove.error.title', language))
+            .setDescription(languageManager.translate('commands.competitors.remove.error.description', language))
             .setColor(Colors.Red)
             .setTimestamp();
         await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
     }
 }
 
-async function listCompetitors(source) {
+async function listCompetitors(source, handler) {
     const isInteraction = source.commandName !== undefined;
+    const language = await handler.getGuildLanguage(source.guild.id);
     try {
         const settings = await prisma.guildSettings.findUnique({
             where: { guildId: isInteraction ? source.guildId : source.guild.id }
@@ -264,12 +247,8 @@ async function listCompetitors(source) {
 
         if (!settings.competitorIds.length) {
             const embed = new EmbedBuilder()
-                .setTitle('Competitor Guilds')
-                .setDescription('No competitor guilds are currently configured.')
-                .addFields({
-                    name: 'How to Add',
-                    value: 'Use `/competitors add <guild_id>` to start tracking competitor guilds.'
-                })
+                .setTitle(languageManager.translate('commands.competitors.list.title', language))
+                .setDescription(languageManager.translate('commands.competitors.list.noCompetitors', language))
                 .setColor(Colors.Blue)
                 .setTimestamp();
             await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
@@ -277,24 +256,24 @@ async function listCompetitors(source) {
         }
 
         const embed = new EmbedBuilder()
-            .setTitle('Competitor Guilds')
-            .setDescription('Here are all the competitor guilds you are currently tracking:')
+            .setTitle(languageManager.translate('commands.competitors.list.title', language))
+            .setDescription(languageManager.translate('commands.competitors.list.currentCompetitors', language))
             .addFields({
-                name: 'Tracked Guilds',
-                value: settings.competitorIds.map((id, index) => 
-                    `\`${index + 1}.\` ${id}`
+                name: languageManager.translate('commands.competitors.list.title', language),
+                value: settings.competitorIds.map((id, index) =>
+                    languageManager.translate('commands.competitors.list.guildEntry', language, { guildId: id, guildName: `Guild ${index + 1}` })
                 ).join('\n')
             })
             .setColor(Colors.Blue)
-            .setFooter({ text: `Total Competitors: ${settings.competitorIds.length}/5` })
+            .setFooter({ text: `Total: ${settings.competitorIds.length}/5` })
             .setTimestamp();
 
         await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));
     } catch (error) {
         console.error('Error listing competitors:', error);
         const embed = new EmbedBuilder()
-            .setTitle('Error')
-            .setDescription('An error occurred while fetching the competitor guilds list.')
+            .setTitle(languageManager.translate('commands.competitors.list.error.title', language))
+            .setDescription(languageManager.translate('commands.competitors.list.error.description', language))
             .setColor(Colors.Red)
             .setTimestamp();
         await (isInteraction ? source.reply({ embeds: [embed] }) : source.reply({ embeds: [embed] }));

@@ -1,0 +1,106 @@
+{
+  "errors": {
+    "missingPermissions": "You don't have permission to use this command.",
+    "cooldown": "Please wait {time} seconds before using this command again.",
+    "generalError": "An error occurred while executing this command."
+  },
+  "common": {
+    "success": "Success!",
+    "error": "Error!",
+    "loading": "Loading..."
+  },
+  "commands": {
+    "ping": {
+      "checking": "Pinging...",
+      "response": "Pong! 🏓\nLatency: {latency}ms\nAPI Latency: {apiLatency}ms",
+      "error": "Error checking latency!"
+    },
+    "competitors": {
+      "missingAction": {
+        "title": "Missing Action",
+        "description": "Please specify an action to perform",
+        "availableCommands": "Available Commands",
+        "commands": [
+          "list   - View all competitor guilds",
+          "add    - Add a new competitor guild",
+          "remove - Remove a competitor guild"
+        ],
+        "footer": "Use /help competitors for more information"
+      },
+      "list": {
+        "title": "Competitor Guilds",
+        "noCompetitors": "No competitor guilds have been added yet.",
+        "currentCompetitors": "Current competitor guilds:",
+        "guildEntry": "{guildName} (`{guildId}`)"
+      },
+      "add": {
+        "missingId": {
+          "title": "Missing Guild ID",
+          "description": "Please provide a guild ID to add as competitor"
+        },
+        "alreadyAdded": {
+          "title": "Already Added",
+          "description": "This guild is already in the competitors list"
+        },
+        "invalidId": {
+          "title": "Invalid Guild ID",
+          "description": "Could not find a guild with the provided ID"
+        },
+        "success": {
+          "title": "Competitor Added",
+          "description": "Successfully added {guildName} to competitors list"
+        },
+        "error": {
+          "title": "Error",
+          "description": "An error occurred while adding the competitor guild"
+        },
+        "invalidGuild": {
+          "title": "Invalid Guild",
+          "description": "This guild exists but has no recent battle data."
+        },
+        "limitReached": {
+          "title": "Limit Reached",
+          "description": "You can only track up to 5 competitor guilds."
+        }
+      },
+      "remove": {
+        "missingId": {
+          "title": "Missing Guild ID",
+          "description": "Please provide a guild ID to remove from competitors"
+        },
+        "notFound": {
+          "title": "Not Found",
+          "description": "This guild is not in the competitors list"
+        },
+        "success": {
+          "title": "Competitor Removed",
+          "description": "Successfully removed guild from competitors list"
+        },
+        "error": {
+          "title": "Error",
+          "description": "An error occurred while removing the competitor guild"
+        }
+      }
+    },
+    "checkregistrations": {
+      "missingRole": {
+        "title": "⚠️ Missing Information",
+        "description": "Please mention the role to check registrations from.",
+        "usage": "Usage",
+        "example": "Example",
+        "slashUsage": "/checkregistrations role:@role",
+        "prefixUsage": "!albiongw checkregistrations @role",
+        "slashExample": "/checkregistrations role:@Members",
+        "prefixExample": "!albiongw checkregistrations @Members"
+      },
+      "allRegistered": {
+        "title": "✅ All Members Registered",
+        "description": "All members with the {roleName} role are registered!"
+      },
+      "unregistered": {
+        "title": "⚠️ Unregistered Members Found",
+        "description": "The following members in {roleName} are not registered:"
+      }
+    }
+  }
+}

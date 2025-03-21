@@ -1,0 +1,106 @@
+{
+  "errors": {
+    "missingPermissions": "Você não tem permissão para usar este comando.",
+    "cooldown": "Por favor, aguarde {time} segundos antes de usar este comando novamente.",
+    "generalError": "Ocorreu um erro ao executar este comando."
+  },
+  "common": {
+    "success": "Sucesso!",
+    "error": "Erro!",
+    "loading": "Carregando..."
+  },
+  "commands": {
+    "ping": {
+      "checking": "Verificando...",
+      "response": "Pong! 🏓\nLatência: {latency}ms\nLatência da API: {apiLatency}ms",
+      "error": "Erro ao verificar latência!"
+    },
+    "competitors": {
+      "missingAction": {
+        "title": "Ação Faltando",
+        "description": "Por favor, especifique uma ação para executar",
+        "availableCommands": "Comandos Disponíveis",
+        "commands": [
+          "list   - Ver todas as guildas competidoras",
+          "add    - Adicionar uma nova guilda competidora",
+          "remove - Remover uma guilda competidora"
+        ],
+        "footer": "Use /help competitors para mais informações"
+      },
+      "list": {
+        "title": "Guildas Competidoras",
+        "noCompetitors": "Nenhuma guilda competidora foi adicionada ainda.",
+        "currentCompetitors": "Guildas competidoras atuais:",
+        "guildEntry": "{guildName} (`{guildId}`)"
+      },
+      "add": {
+        "missingId": {
+          "title": "ID da Guilda Faltando",
+          "description": "Por favor, forneça o ID da guilda para adicionar como competidora"
+        },
+        "alreadyAdded": {
+          "title": "Já Adicionada",
+          "description": "Esta guilda já está na lista de competidores"
+        },
+        "invalidId": {
+          "title": "ID de Guilda Inválido",
+          "description": "Não foi possível encontrar uma guilda com o ID fornecido"
+        },
+        "success": {
+          "title": "Competidor Adicionado",
+          "description": "{guildName} foi adicionada com sucesso à lista de competidores"
+        },
+        "error": {
+          "title": "Erro",
+          "description": "Ocorreu um erro ao adicionar a guilda competidora"
+        },
+        "invalidGuild": {
+          "title": "Guilda Inválida",
+          "description": "Esta guilda existe mas não tem dados recentes de batalha."
+        },
+        "limitReached": {
+          "title": "Limite Atingido",
+          "description": "Você só pode rastrear até 5 guildas competidoras."
+        }
+      },
+      "remove": {
+        "missingId": {
+          "title": "ID da Guilda Faltando",
+          "description": "Por favor, forneça o ID da guilda para remover dos competidores"
+        },
+        "notFound": {
+          "title": "Não Encontrada",
+          "description": "Esta guilda não está na lista de competidores"
+        },
+        "success": {
+          "title": "Competidor Removido",
+          "description": "Guilda removida com sucesso da lista de competidores"
+        },
+        "error": {
+          "title": "Erro",
+          "description": "Ocorreu um erro ao remover a guilda competidora"
+        }
+      }
+    },
+    "checkregistrations": {
+      "missingRole": {
+        "title": "⚠️ Informação Faltando",
+        "description": "Por favor, mencione o cargo para verificar os registros.",
+        "usage": "Uso",
+        "example": "Exemplo",
+        "slashUsage": "/checkregistrations role:@cargo",
+        "prefixUsage": "!albiongw checkregistrations @cargo",
+        "slashExample": "/checkregistrations role:@Membros",
+        "prefixExample": "!albiongw checkregistrations @Membros"
+      },
+      "allRegistered": {
+        "title": "✅ Todos os Membros Registrados",
+        "description": "Todos os membros com o cargo {roleName} estão registrados!"
+      },
+      "unregistered": {
+        "title": "⚠️ Membros Não Registrados Encontrados",
+        "description": "Os seguintes membros no cargo {roleName} não estão registrados:"
+      }
+    }
+  }
+}

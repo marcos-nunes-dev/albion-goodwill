@@ -323,6 +323,16 @@ const commands = [
         .setName('setup')
         .setDescription('Configure all guild settings at once')
         .addStringOption(option =>
+            option.setName('language')
+                .setDescription('Bot language for this server')
+                .setRequired(false)
+                .addChoices(
+                    { name: 'English', value: 'en' },
+                    { name: 'Português', value: 'pt' },
+                    { name: 'Español', value: 'es' }
+                )
+        )
+        .addStringOption(option =>
             option.setName('guild_id')
                 .setDescription('Your Albion guild ID')
                 .setRequired(false)
