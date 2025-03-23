@@ -55,13 +55,18 @@ class EmbedBuilderUtil {
                 if (weapon.players_required > 0) {
                     const roleStatus = weapon.free_role ? '(Free)' : '';
                     const key = `${cleanWeaponName(weapon.type)} ${roleStatus}`;
-                    weaponGroups.set(key, (weaponGroups.get(key) || 0) + weapon.players_required);
+                    const players = weapon.players || [];
+                    const playerMentions = players.map(p => p.isFill ? `<@${p.id}> (fill)` : `<@${p.id}>`).join(' ');
+                    weaponGroups.set(key, {
+                        count: (weaponGroups.get(key)?.count || 0) + weapon.players_required,
+                        players: playerMentions
+                    });
                 }
             });
 
             // Format weapon groups
-            weaponGroups.forEach((count, weaponType) => {
-                partyContent += `\`${count}x\` ${weaponType}\n`;
+            weaponGroups.forEach((data, weaponType) => {
+                partyContent += `\`${data.count}x\` ${weaponType} ${data.players}\n`;
             });
 
             if (partyContent) {

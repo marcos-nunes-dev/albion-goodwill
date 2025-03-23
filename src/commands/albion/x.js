@@ -1,9 +1,7 @@
 const Command = require('../../structures/Command');
 const { PermissionFlagsBits, EmbedBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ActionRowBuilder } = require('discord.js');
 const prisma = require('../../config/prisma');
-
-// Number emojis for parties (1-10)
-const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+const { NUMBER_EMOJIS } = require('../../config/constants');
 
 module.exports = new Command({
     name: 'x',
@@ -118,67 +116,55 @@ module.exports = new Command({
                 }
             }
 
-            // Create options for each weapon in each party
-            const options = [];
-            composition.data.parties.forEach((party, partyIndex) => {
-                // Add specific weapons
-                party.weapons.forEach((weapon, weaponIndex) => {
-                    if (weapon.players_required > 0) {
-                        // Clean up weapon name
-                        const cleanWeaponName = weapon.type.replace("Elder's ", "");
-                        const roleStatus = weapon.free_role ? '(Free)' : '';
-                        
-                        options.push(
-                            new StringSelectMenuOptionBuilder()
-                                .setLabel(`${cleanWeaponName} ${roleStatus}`)
-                                .setDescription(`${party.name} - ${weapon.players_required}x required`)
-                                .setValue(`${partyIndex}-${weaponIndex}`)
-                                .setEmoji(NUMBER_EMOJIS[partyIndex] || '⚔️')
-                        );
-                    }
-                });
-            });
-
-            // Add single Fill option at the end
-            options.push(
+            // Create options for party selection first
+            const partyOptions = composition.data.parties.map((party, index) => 
                 new StringSelectMenuOptionBuilder()
-                    .setLabel('Fill')
-                    .setDescription('Fill any role - Can play any weapon')
-                    .setValue('fill')
-                    .setEmoji('⬜')
+                    .setLabel(party.name)
+                    .setDescription(`Select weapons from ${party.name}`)
+                    .setValue(`party_${index}`)
+                    .setEmoji(NUMBER_EMOJIS[index] || '⚔️')
             );
 
-            if (options.length === 0) {
-                return interaction.editReply({
-                    content: 'No available weapons found in the composition.',
-                });
-            }
-
-            // Create select menu
-            const select = new StringSelectMenuBuilder()
-                .setCustomId('select_weapon')
-                .setPlaceholder('Select a weapon to ping')
-                .addOptions(options);
+            // Create select menu for parties
+            const partySelect = new StringSelectMenuBuilder()
+                .setCustomId('select_party')
+                .setPlaceholder('Select a party')
+                .addOptions(partyOptions);
 
             const row = new ActionRowBuilder()
-                .addComponents(select);
+                .addComponents(partySelect);
 
             // Store composition data and target user in a temporary cache
             interaction.client.compositions = interaction.client.compositions || new Map();
             interaction.client.compositions.set(interaction.user.id, {
                 compositionId: composition.id,
                 data: composition.data,
-                targetUserId: targetUser?.id, // Store target user ID if specified
-                expires: Date.now() + 300000 // 5 minutes
+                targetUserId: targetUser?.id
             });
 
-            const replyContent = targetUser 
-                ? `Select a weapon to ping for ${targetUser}:`
-                : 'Select a weapon to ping:';
-
+            // Update the deferred reply with party selection
             await interaction.editReply({
-                content: replyContent,
-                components: [row],
+                components: [row]
+            });
+
+            // Add collector for party selection
+            const collector = interaction.channel.createMessageComponentCollector({
+                filter: i => i.user.id === interaction.user.id && i.customId === 'select_party',
+                time: 60000
+            });
+
+            collector.on('collect', async i => {
+                // Let the select_party handler handle the interaction
+                // We don't need to do anything here since the handler will update the message
+            });
+
+            collector.on('end', collected => {
+                if (collected.size === 0) {
+                    interaction.editReply({
+                        content: 'Party selection timed out.',
+                        components: []
+                    }).catch(console.error);
+                }
             });
 
         } catch (error) {

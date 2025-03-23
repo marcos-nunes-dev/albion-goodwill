@@ -13,7 +13,7 @@ class SelectMenuHandler {
 
         for (const file of selectMenuFiles) {
             const selectMenu = require(path.join(selectMenusPath, file));
-            if (selectMenu.customId && selectMenu.execute) {
+            if (selectMenu.customId) {
                 console.log(`Loading select menu: ${selectMenu.customId}`);
                 this.selectMenus.set(selectMenu.customId, selectMenu);
             }
@@ -30,20 +30,18 @@ class SelectMenuHandler {
         }
 
         try {
-            await selectMenu.execute(interaction);
+            await selectMenu.run(interaction);
         } catch (error) {
             console.error(`Error executing select menu ${interaction.customId}:`, error);
-            try {
-                const reply = interaction.deferred || interaction.replied
-                    ? interaction.editReply.bind(interaction)
-                    : interaction.reply.bind(interaction);
-
-                await reply({
-                    content: 'There was an error while executing this select menu!',
-                    ephemeral: true
-                });
-            } catch (e) {
-                console.error('Failed to send error message:', e);
+            const reply = {
+                content: 'There was an error processing your selection!',
+                ephemeral: true
+            };
+            
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply(reply);
+            } else {
+                await interaction.reply(reply);
             }
         }
     }
