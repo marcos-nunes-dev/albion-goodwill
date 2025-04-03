@@ -408,6 +408,34 @@ const commands = [
                 .setDescription('Text file containing member list')
                 .setRequired(true)
         ),
+    new SlashCommandBuilder()
+        .setName('attendance')
+        .setDescription('Show attendance statistics for the guild or a specific user')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addAttachmentOption(option =>
+            option.setName('members_file')
+                .setDescription('Text file containing member list')
+                .setRequired(true)
+        )
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('The user to check attendance for (optional)')
+                .setRequired(false)
+        ),
+    new SlashCommandBuilder()
+        .setName('attendancekick')
+        .setDescription('Identify members with low attendance based on a threshold or guild average')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addAttachmentOption(option =>
+            option.setName('members_file')
+                .setDescription('Text file containing member list')
+                .setRequired(true)
+        )
+        .addIntegerOption(option =>
+            option.setName('threshold')
+                .setDescription('Minimum attendance threshold (optional)')
+                .setRequired(false)
+        ),
 ];
 
 async function registerSlashCommands(client) {
