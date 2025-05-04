@@ -526,11 +526,18 @@ const commands = [
     )
     .addStringOption((option) =>
       option
-        .setName("targets")
+        .setName("users_and_roles")
         .setDescription(
-          "Users, roles, or voice channels to apply the action to (mention them)"
+          "Users and/or roles to apply the action to (mention them)"
         )
-        .setRequired(true)
+        .setRequired(false)
+    )
+    .addChannelOption((option) =>
+      option
+        .setName("channels")
+        .setDescription("Voice channels to apply the action to")
+        .setRequired(false)
+        .addChannelTypes(ChannelType.GuildVoice)
     ),
 ];
 

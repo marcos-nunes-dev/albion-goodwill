@@ -25,9 +25,17 @@ module.exports = new Command({
         ? message.options.getRole("target_role")
         : message.mentions.roles.first();
 
-      const targets = isSlash
-        ? message.options.getString("targets")
-        : message.content.split(" ").slice(3).join(" ");
+      // For slash commands, get both parameters
+      const usersAndRoles = isSlash
+        ? message.options.getString("users_and_roles")
+        : null;
+
+      const channel = isSlash ? message.options.getChannel("channels") : null;
+
+      // For traditional commands, parse mentions from the message
+      const targets = !isSlash
+        ? message.content.split(" ").slice(3).join(" ")
+        : null;
 
       // Validate action
       if (!action || !["add", "remove"].includes(action)) {
@@ -61,65 +69,76 @@ module.exports = new Command({
         return;
       }
 
-      // Validate targets
-      if (!targets) {
-        const errorEmbed = new EmbedBuilder()
-          .setTitle("⚠️ Missing Targets")
-          .setDescription(
-            "Please mention users, roles, or voice channels to apply the action to."
-          )
-          .setColor(Colors.Yellow)
-          .setTimestamp();
-
-        if (isSlash) {
-          await message.editReply({ embeds: [errorEmbed] });
-        } else {
-          await message.reply({ embeds: [errorEmbed] });
-        }
-        return;
-      }
-
       // Get all members to process
       const membersToProcess = new Set();
 
-      // Parse mentions from the targets string
-      const roleMentions = targets.match(/<@&(\d+)>/g) || [];
-      const userMentions = targets.match(/<@!?(\d+)>/g) || [];
-      const channelMentions = targets.match(/<#(\d+)>/g) || [];
+      if (isSlash) {
+        // Handle users and roles from slash command
+        if (usersAndRoles) {
+          const roleMentions = usersAndRoles.match(/<@&(\d+)>/g) || [];
+          const userMentions = usersAndRoles.match(/<@!?(\d+)>/g) || [];
 
-      // Add members from mentioned roles
-      for (const mention of roleMentions) {
-        const roleId = mention.match(/<@&(\d+)>/)[1];
-        const role = message.guild.roles.cache.get(roleId);
-        if (role) {
-          role.members.forEach((member) => membersToProcess.add(member));
+          // Add members from mentioned roles
+          for (const mention of roleMentions) {
+            const roleId = mention.match(/<@&(\d+)>/)[1];
+            const role = message.guild.roles.cache.get(roleId);
+            if (role) {
+              role.members.forEach((member) => membersToProcess.add(member));
+            }
+          }
+
+          // Add mentioned users
+          for (const mention of userMentions) {
+            const userId = mention.match(/<@!?(\d+)>/)[1];
+            const member = message.guild.members.cache.get(userId);
+            if (member) {
+              membersToProcess.add(member);
+            }
+          }
         }
-      }
 
-      // Add mentioned users
-      for (const mention of userMentions) {
-        const userId = mention.match(/<@!?(\d+)>/)[1];
-        const member = message.guild.members.cache.get(userId);
-        if (member) {
-          membersToProcess.add(member);
-        }
-      }
-
-      // Add members from mentioned voice channels
-      for (const mention of channelMentions) {
-        const channelId = mention.match(/<#(\d+)>/)[1];
-        const channel = message.guild.channels.cache.get(channelId);
-        if (channel && channel.type === "GUILD_VOICE") {
+        // Handle channel from slash command
+        if (channel) {
           channel.members.forEach((member) => membersToProcess.add(member));
+        }
+      } else {
+        // Handle traditional command with mentions
+        const roleMentions = targets.match(/<@&(\d+)>/g) || [];
+        const userMentions = targets.match(/<@!?(\d+)>/g) || [];
+        const channelMentions = targets.match(/<#(\d+)>/g) || [];
+
+        // Add members from mentioned roles
+        for (const mention of roleMentions) {
+          const roleId = mention.match(/<@&(\d+)>/)[1];
+          const role = message.guild.roles.cache.get(roleId);
+          if (role) {
+            role.members.forEach((member) => membersToProcess.add(member));
+          }
+        }
+
+        // Add mentioned users
+        for (const mention of userMentions) {
+          const userId = mention.match(/<@!?(\d+)>/)[1];
+          const member = message.guild.members.cache.get(userId);
+          if (member) {
+            membersToProcess.add(member);
+          }
+        }
+
+        // Add members from mentioned voice channels
+        for (const mention of channelMentions) {
+          const channelId = mention.match(/<#(\d+)>/)[1];
+          const channel = message.guild.channels.cache.get(channelId);
+          if (channel && channel.type === "GUILD_VOICE") {
+            channel.members.forEach((member) => membersToProcess.add(member));
+          }
         }
       }
 
       if (membersToProcess.size === 0) {
         const errorEmbed = new EmbedBuilder()
           .setTitle("⚠️ No Valid Targets")
-          .setDescription(
-            "No valid users, roles, or voice channels were mentioned."
-          )
+          .setDescription("No valid users, roles, or channels were found.")
           .setColor(Colors.Yellow)
           .setTimestamp();
 
