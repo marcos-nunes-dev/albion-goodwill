@@ -17,10 +17,12 @@
     "axios": "^1.7.9",
     "discord.js": "14.18.0",
     "dotenv": "16.4.7",
+    "express-rate-limit": "^7.5.0",
     "fuzzyset.js": "^1.0.7",
     "node-cron": "^3.0.3",
     "node-fetch": "^2.7.0",
-    "prisma": "5.22.0"
+    "prisma": "5.22.0",
+    "puppeteer": "^24.8.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
