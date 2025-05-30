@@ -64,6 +64,8 @@ model GuildSettings {
   syncAlbionNickname Boolean  @default(false)
   battlelogWebhook   String?
   battlelogChannelId String?
+  minTotalPlayers    Int      @default(20)
+  minGuildPlayers    Int      @default(14)
 
   @@map("guild_settings")
 }

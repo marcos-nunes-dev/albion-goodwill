@@ -451,6 +451,26 @@ const commands = [
         .setDescription("Custom command prefix")
         .setRequired(false)
     )
+    .addIntegerOption((option) =>
+      option
+        .setName("min_total_players")
+        .setDescription(
+          "Minimum total players required in a battle (default: 20)"
+        )
+        .setRequired(false)
+        .setMinValue(1)
+        .setMaxValue(100)
+    )
+    .addIntegerOption((option) =>
+      option
+        .setName("min_guild_players")
+        .setDescription(
+          "Minimum guild players required in a battle (default: 14)"
+        )
+        .setRequired(false)
+        .setMinValue(1)
+        .setMaxValue(100)
+    )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName("membersdiff")
