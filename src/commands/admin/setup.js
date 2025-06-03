@@ -42,6 +42,21 @@ module.exports = new Command({
         minGuildPlayers = message.options.getInteger("min_guild_players");
       }
 
+      // Verify we're in the correct Discord server
+      if (!message.guild || !message.guildId) {
+        const errorEmbed = new EmbedBuilder()
+          .setTitle("❌ Error")
+          .setDescription("This command can only be used in a Discord server.")
+          .setColor(Colors.Red);
+
+        if (isSlash) {
+          await message.reply({ embeds: [errorEmbed], ephemeral: true });
+        } else {
+          await message.reply({ embeds: [errorEmbed] });
+        }
+        return;
+      }
+
       // Get current settings
       const settings = await prisma.guildSettings.findUnique({
         where: { guildId: message.guildId },
@@ -50,7 +65,7 @@ module.exports = new Command({
       // Update settings with new values if provided
       const updateData = {
         guildId: message.guildId,
-        guildName: guildName || settings?.guildName,
+        guildName: guildName || settings?.guildName || message.guild.name,
         language: language || settings?.language || "en",
         albionGuildId: guildId || settings?.albionGuildId,
         nicknameVerifiedId: verifiedRole?.id || settings?.nicknameVerifiedId,
@@ -116,44 +131,44 @@ module.exports = new Command({
             ].join("\n"),
           },
           {
-            name: "Class Roles",
+            name: "Role Configuration",
             value: [
-              `Tank: ${
+              `Tank Role: ${
                 updateData.tankRoleId
                   ? `${tankRole ? newMark : checkMark} <@&${
                       updateData.tankRoleId
                     }>`
                   : `${crossMark} Not Set`
               }`,
-              `Healer: ${
+              `Healer Role: ${
                 updateData.healerRoleId
                   ? `${healerRole ? newMark : checkMark} <@&${
                       updateData.healerRoleId
                     }>`
                   : `${crossMark} Not Set`
               }`,
-              `Support: ${
+              `Support Role: ${
                 updateData.supportRoleId
                   ? `${supportRole ? newMark : checkMark} <@&${
                       updateData.supportRoleId
                     }>`
                   : `${crossMark} Not Set`
               }`,
-              `Melee DPS: ${
+              `Melee DPS Role: ${
                 updateData.dpsMeleeRoleId
                   ? `${meleeRole ? newMark : checkMark} <@&${
                       updateData.dpsMeleeRoleId
                     }>`
                   : `${crossMark} Not Set`
               }`,
-              `Ranged DPS: ${
+              `Ranged DPS Role: ${
                 updateData.dpsRangedRoleId
                   ? `${rangedRole ? newMark : checkMark} <@&${
                       updateData.dpsRangedRoleId
                     }>`
                   : `${crossMark} Not Set`
               }`,
-              `Battlemount: ${
+              `Battlemount Role: ${
                 updateData.battlemountRoleId
                   ? `${mountRole ? newMark : checkMark} <@&${
                       updateData.battlemountRoleId
