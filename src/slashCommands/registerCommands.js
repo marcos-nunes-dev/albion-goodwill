@@ -170,6 +170,18 @@ const commands = [
     .setName("syncnow")
     .setDescription("Force sync battles from Albion Online")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName("syncfromdays")
+    .setDescription("Sync battles from a specific number of days ago for the current guild")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addIntegerOption((option) =>
+      option
+        .setName("days")
+        .setDescription("Number of days to look back")
+        .setRequired(true)
+        .setMinValue(1)
+        .setMaxValue(30)
+    ),
 
   // Albion Commands
   new SlashCommandBuilder()
