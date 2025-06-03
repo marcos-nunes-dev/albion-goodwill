@@ -184,27 +184,30 @@ class BattleSyncManager {
     }
   }
 
-  async syncBattles() {
+  async syncBattles(customStartDate = null, specificGuildId = null) {
     try {
       logger.info("Starting battle sync...");
 
-      // Get all guilds with both Albion ID and battlelog configuration
+      // Get guild settings based on whether we're syncing for a specific guild or all guilds
       const guildsToSync = await prisma.guildSettings.findMany({
         where: {
           AND: [
             { albionGuildId: { not: null } },
             { battlelogChannelId: { not: null } },
             { battlelogWebhook: { not: null } },
+            ...(specificGuildId ? [{ guildId: specificGuildId }] : [])
           ],
         },
       });
 
       if (guildsToSync.length === 0) {
-        logger.info("No guilds found with complete battle configuration");
+        logger.info(specificGuildId 
+          ? "No battle configuration found for the specified guild"
+          : "No guilds found with complete battle configuration");
         return;
       }
 
-      logger.info(`Found ${guildsToSync.length} guilds to sync battles for`);
+      logger.info(`Found ${guildsToSync.length} guild${guildsToSync.length > 1 ? 's' : ''} to sync battles for`);
 
       for (const guildSettings of guildsToSync) {
         try {
@@ -216,7 +219,7 @@ class BattleSyncManager {
             continue;
           }
 
-          // Get last battle time or default to 2 days ago
+          // Get last battle time or use custom start date
           const lastBattle = await prisma.battleRegistration.findFirst({
             where: { guildId: guildSettings.guildId },
             orderBy: { battleTime: "desc" },
@@ -225,8 +228,12 @@ class BattleSyncManager {
           const lastBattleTime = lastBattle
             ? new Date(lastBattle.battleTime)
             : null;
-          const twoDaysAgo = new Date();
-          twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+          
+          // Use custom start date if provided, otherwise default to 2 days ago
+          const startDate = customStartDate || new Date();
+          if (!customStartDate) {
+            startDate.setDate(startDate.getDate() - 2);
+          }
 
           let page = 1;
           let shouldContinue = true;
@@ -265,7 +272,7 @@ class BattleSyncManager {
               }
 
               // Skip battles older than 2 days if no last battle
-              if (!lastBattleTime && battleTime < twoDaysAgo) {
+              if (!lastBattleTime && battleTime < startDate) {
                 foundOldBattle = true;
                 break;
               }
